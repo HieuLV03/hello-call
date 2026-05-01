@@ -12,21 +12,18 @@ const io = new Server(server, {
   cors: { origin: "*" },
 });
 
-// 🔥 ONLY QUEUE (KHÔNG MAP)
 const queue = [];
 
-const addToQueue = (socket) => {
-  if (!queue.includes(socket)) {
-    queue.push(socket);
-  }
+const add = (s) => {
+  if (!queue.includes(s)) queue.push(s);
 };
 
-const removeFromQueue = (socket) => {
-  const i = queue.indexOf(socket);
+const remove = (s) => {
+  const i = queue.indexOf(s);
   if (i !== -1) queue.splice(i, 1);
 };
 
-const matchUsers = () => {
+const match = () => {
   while (queue.length >= 2) {
     const a = queue.shift();
     const b = queue.shift();
@@ -42,37 +39,29 @@ const matchUsers = () => {
 };
 
 io.on("connection", (socket) => {
-  console.log("Connected:", socket.id);
-
   socket.partner = null;
 
-  addToQueue(socket);
-
-  matchUsers();
+  socket.on("join", () => {
+    add(socket);
+    match();
+  });
 
   socket.on("signal", ({ to, data }) => {
-    io.to(to).emit("signal", {
-      from: socket.id,
-      data,
-    });
+    io.to(to).emit("signal", { from: socket.id, data });
   });
 
   socket.on("next", () => {
-    const partnerId = socket.partner;
-
-    if (partnerId) {
-      io.to(partnerId).emit("partner-disconnected");
-    }
-
     socket.partner = null;
+    add(socket);
+    match();
+  });
 
-    addToQueue(socket);
-
-    matchUsers();
+  socket.on("leave", () => {
+    remove(socket);
   });
 
   socket.on("disconnect", () => {
-    removeFromQueue(socket);
+    remove(socket);
 
     if (socket.partner) {
       io.to(socket.partner).emit("partner-disconnected");
@@ -80,6 +69,6 @@ io.on("connection", (socket) => {
   });
 });
 
-server.listen(3001, "0.0.0.0", () => {
-  console.log("Server running on 3001");
+server.listen(3001, () => {
+  console.log("server running");
 });
