@@ -14,26 +14,28 @@ const io = new Server(server, {
 
 const onlineUsers = new Map();
 
-// 🔥 match ANY 2 users in pool
+// ================= MATCH ENGINE =================
 const tryMatchAll = () => {
-  const users = Array.from(onlineUsers.values()).filter(
-    (u) => !u.partner
-  );
+  const users = Array.from(onlineUsers.values());
 
-  while (users.length >= 2) {
-    const userA = users.shift();
-    const userB = users.shift();
+  // 🔥 chỉ lấy user chưa match
+  const freeUsers = users.filter((u) => !u.partner);
 
-    if (!userA || !userB) break;
+  while (freeUsers.length >= 2) {
+    const a = freeUsers.shift();
+    const b = freeUsers.shift();
 
-    onlineUsers.delete(userA.id);
-    onlineUsers.delete(userB.id);
+    if (!a || !b) return;
 
-    userA.partner = userB.id;
-    userB.partner = userA.id;
+    // remove khỏi pool
+    onlineUsers.delete(a.id);
+    onlineUsers.delete(b.id);
 
-    io.to(userA.id).emit("matched", userB.id);
-    io.to(userB.id).emit("matched", userA.id);
+    a.partner = b.id;
+    b.partner = a.id;
+
+    io.to(a.id).emit("matched", b.id);
+    io.to(b.id).emit("matched", a.id);
   }
 };
 
@@ -42,11 +44,15 @@ io.on("connection", (socket) => {
 
   socket.partner = null;
 
+  // add vào pool
   onlineUsers.set(socket.id, socket);
 
-  // 🔥 IMPORTANT: ALWAYS re-check FULL POOL
+  // 🔥 IMPORTANT: reset trạng thái khi join
+  socket.partner = null;
+
   tryMatchAll();
 
+  // ================= SIGNAL =================
   socket.on("signal", ({ to, data }) => {
     io.to(to).emit("signal", {
       from: socket.id,
@@ -54,11 +60,15 @@ io.on("connection", (socket) => {
     });
   });
 
+  // ================= NEXT =================
   socket.on("next", () => {
     const partnerId = socket.partner;
 
     if (partnerId) {
       io.to(partnerId).emit("partner-disconnected");
+
+      const partner = onlineUsers.get(partnerId);
+      if (partner) partner.partner = null;
     }
 
     socket.partner = null;
@@ -68,10 +78,14 @@ io.on("connection", (socket) => {
     tryMatchAll();
   });
 
+  // ================= DISCONNECT =================
   socket.on("disconnect", () => {
     onlineUsers.delete(socket.id);
 
     if (socket.partner) {
+      const partner = onlineUsers.get(socket.partner);
+      if (partner) partner.partner = null;
+
       io.to(socket.partner).emit("partner-disconnected");
     }
   });
