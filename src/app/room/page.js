@@ -3,12 +3,10 @@
 import { useEffect, useRef } from "react";
 import io from "socket.io-client";
 import Peer from "simple-peer";
+import { getSocket } from "../socket";
 
-const socket = io("https://hello-call-socket-production.up.railway.app", {
-  transports: ["websocket"],
-  autoConnect: false,
-});
 
+const socket = getSocket();
 export default function Room() {
   const myVideo = useRef<HTMLVideoElement>(null);
   const userVideo = useRef<HTMLVideoElement>(null);
@@ -16,116 +14,45 @@ export default function Room() {
   const peerRef = useRef<Peer.Instance | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
 
-  useEffect(() => {
-    let mounted = true;
+ useEffect(() => {
+  let stream;
 
-    const start = async () => {
-      socket.connect();
+  const socket = getSocket();
 
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: true,
-        audio: true,
-      });
+  if (!socket.connected) {
+    socket.connect();
+  }
 
-      if (!mounted) {
-        stream.getTracks().forEach((t) => t.stop());
-        return;
-      }
+  navigator.mediaDevices.getUserMedia({
+    video: true,
+    audio: true,
+  }).then((mediaStream) => {
+    stream = mediaStream;
+    myVideo.current.srcObject = stream;
 
-      streamRef.current = stream;
-      if (myVideo.current) myVideo.current.srcObject = stream;
+    socket.off(); // 🔥 chặn duplicate listener
 
-      socket.emit("join");
+    socket.emit("join");
 
-      // ================= MATCH =================
-      socket.on("matched", (partnerId: string) => {
-        console.log("MATCHED:", partnerId);
+    socket.on("matched", (partnerId) => {
+      console.log("matched:", partnerId);
+    });
 
-        if (peerRef.current) {
-          peerRef.current.destroy();
-        }
+    socket.on("signal", ({ data }) => {
+      peerRef.current?.signal(data);
+    });
 
-        const peer = new Peer({
-          initiator: true,
-          trickle: false,
-          stream,
-        });
-
-        peer.on("signal", (data) => {
-          socket.emit("signal", {
-            to: partnerId,
-            data,
-          });
-        });
-
-        peer.on("stream", (remote) => {
-          if (userVideo.current) userVideo.current.srcObject = remote;
-        });
-
-        peerRef.current = peer;
-      });
-
-      // ================= SIGNAL =================
-      socket.on("signal", ({ from, data }) => {
-        try {
-          if (!peerRef.current) {
-            // 👇 create only ONE peer here
-            const peer = new Peer({
-              initiator: false,
-              trickle: false,
-              stream: streamRef.current!,
-            });
-
-            peer.on("signal", (signalData) => {
-              socket.emit("signal", {
-                to: from,
-                data: signalData,
-              });
-            });
-
-            peer.on("stream", (remote) => {
-              if (userVideo.current) {
-                userVideo.current.srcObject = remote;
-              }
-            });
-
-            peerRef.current = peer;
-          }
-
-          peerRef.current.signal(data);
-        } catch (e) {
-          console.log("signal error:", e);
-        }
-      });
-
-      // ================= DISCONNECT =================
-      socket.on("partner-disconnected", () => {
-        peerRef.current?.destroy();
-        peerRef.current = null;
-
-        if (userVideo.current) {
-          userVideo.current.srcObject = null;
-        }
-      });
-    };
-
-    start();
-
-    return () => {
-      mounted = false;
-
-      socket.emit("next");
-      socket.disconnect();
-
-      socket.off("matched");
-      socket.off("signal");
-      socket.off("partner-disconnected");
-
+    socket.on("partner-disconnected", () => {
       peerRef.current?.destroy();
-      streamRef.current?.getTracks().forEach((t) => t.stop());
-    };
-  }, []);
+      peerRef.current = null;
+    });
+  });
 
+  return () => {
+    socket.emit("next");
+    socket.off();
+  };
+}, []);
   const handleNext = () => {
     peerRef.current?.destroy();
     peerRef.current = null;
