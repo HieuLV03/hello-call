@@ -12,27 +12,20 @@ const io = new Server(server, {
   cors: { origin: "*" },
 });
 
-const queue = new Set(); // 🔥 dùng Set chống duplicate
+let queue = [];
 
-const removeFromQueue = (socket) => {
-  queue.delete(socket);
+const cleanQueue = () => {
+  queue = queue.filter((s) => s.connected && !s.partner);
 };
 
-const addToQueue = (socket) => {
-  queue.add(socket);
-};
+const tryMatch = () => {
+  cleanQueue();
 
-const matchUsers = () => {
-  const users = Array.from(queue);
-
-  while (users.length >= 2) {
-    const a = users.shift();
-    const b = users.shift();
+  while (queue.length >= 2) {
+    const a = queue.shift();
+    const b = queue.shift();
 
     if (!a || !b) return;
-
-    removeFromQueue(a);
-    removeFromQueue(b);
 
     a.partner = b.id;
     b.partner = a.id;
@@ -43,39 +36,47 @@ const matchUsers = () => {
 };
 
 io.on("connection", (socket) => {
+  console.log("Connected:", socket.id);
+
   socket.partner = null;
 
-  socket.on("join", () => {
-    addToQueue(socket);
-    matchUsers();
-  });
+  const joinQueue = () => {
+    cleanQueue();
 
-  socket.on("signal", ({ to, data }) => {
-    io.to(to).emit("signal", { from: socket.id, data });
+    // ❌ remove socket cũ nếu tồn tại
+    queue = queue.filter((s) => s.id !== socket.id);
+
+    queue.push(socket);
+
+    tryMatch();
+  };
+
+  socket.on("join", () => {
+    joinQueue();
   });
 
   socket.on("next", () => {
     if (socket.partner) {
       io.to(socket.partner).emit("partner-disconnected");
-
-      const partner = io.sockets.sockets.get(socket.partner);
-      if (partner) partner.partner = null;
     }
 
     socket.partner = null;
 
-    addToQueue(socket);
-    matchUsers();
+    joinQueue();
+  });
+
+  socket.on("signal", ({ to, data }) => {
+    io.to(to).emit("signal", {
+      from: socket.id,
+      data,
+    });
   });
 
   socket.on("disconnect", () => {
-    removeFromQueue(socket);
+    queue = queue.filter((s) => s.id !== socket.id);
 
     if (socket.partner) {
       io.to(socket.partner).emit("partner-disconnected");
-
-      const partner = io.sockets.sockets.get(socket.partner);
-      if (partner) partner.partner = null;
     }
   });
 });

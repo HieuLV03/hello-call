@@ -17,74 +17,73 @@ export default function Room() {
   const userVideo = useRef(null);
   const peerRef = useRef(null);
 
-  useEffect(() => {
-    let stream;
+useEffect(() => {
+  let stream;
 
-    socket.connect();
+  socket.connect();
 
-    navigator.mediaDevices
-      .getUserMedia({ video: true, audio: true })
-      .then((mediaStream) => {
-        stream = mediaStream;
-        myVideo.current.srcObject = stream;
+  navigator.mediaDevices
+    .getUserMedia({ video: true, audio: true })
+    .then((mediaStream) => {
+      stream = mediaStream;
+      myVideo.current.srcObject = stream;
 
+      // ❌ CHỈ JOIN 1 LẦN
+      socket.on("connect", () => {
         socket.emit("join");
-
-        socket.on("matched", (partnerId) => {
-          if (peerRef.current) {
-            peerRef.current.destroy();
-            peerRef.current = null;
-          }
-
-          const peer = new Peer({
-            initiator: true,
-            trickle: false,
-            stream,
-          });
-
-          peer.on("signal", (data) => {
-            socket.emit("signal", {
-              to: partnerId,
-              data,
-            });
-          });
-
-          peer.on("stream", (remote) => {
-            userVideo.current.srcObject = remote;
-          });
-
-          peer.on("error", (e) => {
-            console.log("peer error:", e);
-          });
-
-          peerRef.current = peer;
-        });
-
-        socket.on("signal", ({ data }) => {
-          try {
-            if (!peerRef.current) return;
-            peerRef.current.signal(data);
-          } catch (e) {
-            console.log("signal error ignored");
-          }
-        });
-
-        socket.on("partner-disconnected", () => {
-          peerRef.current?.destroy();
-          peerRef.current = null;
-          userVideo.current.srcObject = null;
-        });
       });
 
-    return () => {
-      socket.emit("leave");
-      socket.off("matched");
-      socket.off("signal");
-      socket.off("partner-disconnected");
-      socket.disconnect();
-    };
-  }, []);
+      // ================= MATCH =================
+      socket.on("matched", (partnerId) => {
+        if (peerRef.current) {
+          peerRef.current.destroy();
+          peerRef.current = null;
+        }
 
+        const peer = new Peer({
+          initiator: true,
+          trickle: false,
+          stream,
+        });
+
+        peer.on("signal", (data) => {
+          socket.emit("signal", {
+            to: partnerId,
+            data,
+          });
+        });
+
+        peer.on("stream", (remote) => {
+          userVideo.current.srcObject = remote;
+        });
+
+        peerRef.current = peer;
+      });
+
+      // ================= SIGNAL =================
+      socket.on("signal", ({ data }) => {
+        try {
+          if (!peerRef.current) return;
+          peerRef.current.signal(data);
+        } catch (e) {}
+      });
+
+      // ================= DISCONNECT =================
+      socket.on("partner-disconnected", () => {
+        peerRef.current?.destroy();
+        peerRef.current = null;
+        userVideo.current.srcObject = null;
+      });
+    });
+
+  return () => {
+    socket.off("connect");
+    socket.off("matched");
+    socket.off("signal");
+    socket.off("partner-disconnected");
+    socket.disconnect();
+  };
+}, []);
   const next = () => {
     peerRef.current?.destroy();
     peerRef.current = null;
