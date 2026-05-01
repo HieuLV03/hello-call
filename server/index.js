@@ -12,38 +12,29 @@ const io = new Server(server, {
   cors: { origin: "*" },
 });
 
-// 🔥 danh sách user đang online
-const onlineUsers = new Map(); // socket.id -> socket
+const onlineUsers = new Map();
 
-const getRandomUser = (excludeId) => {
+// 🔥 match ANY 2 users in pool
+const tryMatchAll = () => {
   const users = Array.from(onlineUsers.values()).filter(
-    (u) => u.id !== excludeId && !u.partner
+    (u) => !u.partner
   );
 
-  if (users.length === 0) return null;
+  while (users.length >= 2) {
+    const userA = users.shift();
+    const userB = users.shift();
 
-  const randomIndex = Math.floor(Math.random() * users.length);
-  return users[randomIndex];
-};
+    if (!userA || !userB) break;
 
-const tryMatch = (socket) => {
-  if (socket.partner) return;
+    onlineUsers.delete(userA.id);
+    onlineUsers.delete(userB.id);
 
-  const partner = getRandomUser(socket.id);
+    userA.partner = userB.id;
+    userB.partner = userA.id;
 
-  if (!partner) {
-    onlineUsers.set(socket.id, socket);
-    return;
+    io.to(userA.id).emit("matched", userB.id);
+    io.to(userB.id).emit("matched", userA.id);
   }
-
-  // remove partner khỏi pool
-  onlineUsers.delete(partner.id);
-
-  socket.partner = partner.id;
-  partner.partner = socket.id;
-
-  io.to(socket.id).emit("matched", partner.id);
-  io.to(partner.id).emit("matched", socket.id);
 };
 
 io.on("connection", (socket) => {
@@ -51,13 +42,11 @@ io.on("connection", (socket) => {
 
   socket.partner = null;
 
-  // thêm vào pool
   onlineUsers.set(socket.id, socket);
 
-  // 🔥 thử match ngay khi join
-  tryMatch(socket);
+  // 🔥 IMPORTANT: ALWAYS re-check FULL POOL
+  tryMatchAll();
 
-  // ================= SIGNAL =================
   socket.on("signal", ({ to, data }) => {
     io.to(to).emit("signal", {
       from: socket.id,
@@ -65,7 +54,6 @@ io.on("connection", (socket) => {
     });
   });
 
-  // ================= NEXT =================
   socket.on("next", () => {
     const partnerId = socket.partner;
 
@@ -75,11 +63,11 @@ io.on("connection", (socket) => {
 
     socket.partner = null;
 
-    // 🔥 quay lại pool và rematch
-    tryMatch(socket);
+    onlineUsers.set(socket.id, socket);
+
+    tryMatchAll();
   });
 
-  // ================= DISCONNECT =================
   socket.on("disconnect", () => {
     onlineUsers.delete(socket.id);
 
