@@ -12,31 +12,50 @@ const io = new Server(server, {
   cors: { origin: "*" },
 });
 
-let waitingUser = null;
+// 🔥 danh sách user đang online
+const onlineUsers = new Map(); // socket.id -> socket
+
+const getRandomUser = (excludeId) => {
+  const users = Array.from(onlineUsers.values()).filter(
+    (u) => u.id !== excludeId && !u.partner
+  );
+
+  if (users.length === 0) return null;
+
+  const randomIndex = Math.floor(Math.random() * users.length);
+  return users[randomIndex];
+};
+
+const tryMatch = (socket) => {
+  if (socket.partner) return;
+
+  const partner = getRandomUser(socket.id);
+
+  if (!partner) {
+    onlineUsers.set(socket.id, socket);
+    return;
+  }
+
+  // remove partner khỏi pool
+  onlineUsers.delete(partner.id);
+
+  socket.partner = partner.id;
+  partner.partner = socket.id;
+
+  io.to(socket.id).emit("matched", partner.id);
+  io.to(partner.id).emit("matched", socket.id);
+};
 
 io.on("connection", (socket) => {
   console.log("Connected:", socket.id);
 
   socket.partner = null;
 
-  // cleanup dead socket
-  if (waitingUser && !waitingUser.connected) {
-    waitingUser = null;
-  }
+  // thêm vào pool
+  onlineUsers.set(socket.id, socket);
 
-  // ================= MATCH LOGIC =================
-  if (waitingUser && waitingUser.id !== socket.id) {
-    const partner = waitingUser;
-    waitingUser = null;
-
-    socket.partner = partner.id;
-    partner.partner = socket.id;
-
-    io.to(partner.id).emit("matched", socket.id);
-    io.to(socket.id).emit("matched", partner.id);
-  } else {
-    waitingUser = socket;
-  }
+  // 🔥 thử match ngay khi join
+  tryMatch(socket);
 
   // ================= SIGNAL =================
   socket.on("signal", ({ to, data }) => {
@@ -56,14 +75,13 @@ io.on("connection", (socket) => {
 
     socket.partner = null;
 
-    waitingUser = socket;
+    // 🔥 quay lại pool và rematch
+    tryMatch(socket);
   });
 
   // ================= DISCONNECT =================
   socket.on("disconnect", () => {
-    if (waitingUser?.id === socket.id) {
-      waitingUser = null;
-    }
+    onlineUsers.delete(socket.id);
 
     if (socket.partner) {
       io.to(socket.partner).emit("partner-disconnected");
