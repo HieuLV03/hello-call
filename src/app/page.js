@@ -28,21 +28,23 @@ export default function Home() {
         const handleMatched = (partnerId) => {
           createPeer(partnerId, stream);
         };
+const handleSignal = ({ data }) => {
+  if (!peerRef.current) {
+    pendingSignals.current.push(data);
+    return;
+  }
 
-        const handleSignal = ({ data }) => {
-          if (!peerRef.current) {
-            pendingSignals.current.push(data);
-            return;
-          }
+  if (
+    peerRef.current.destroyed ||
+    peerRef.current.destroying
+  ) return;
 
-          if (peerRef.current.destroyed) return;
-
-          try {
-            peerRef.current.signal(data);
-          } catch (err) {
-            console.error("signal error:", err);
-          }
-        };
+  try {
+    peerRef.current.signal(data);
+  } catch (err) {
+    console.error(err);
+  }
+};
 
         const handleDisconnect = () => {
           if (peerRef.current) {

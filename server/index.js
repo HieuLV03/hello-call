@@ -9,9 +9,7 @@ app.use(cors());
 const server = http.createServer(app);
 
 const io = new Server(server, {
-  cors: {
-    origin: "*",
-  },
+  cors: { origin: "*" },
 });
 
 let waitingUser = null;
@@ -19,16 +17,23 @@ let waitingUser = null;
 io.on("connection", (socket) => {
   console.log("Connected:", socket.id);
 
-  if (waitingUser) {
+  socket.partner = null;
+
+  // 🔥 CLEAN WAITING USER nếu bị dead socket
+  if (waitingUser && !waitingUser.connected) {
+    waitingUser = null;
+  }
+
+  // 🔥 MATCH LOGIC CHUẨN
+  if (waitingUser && waitingUser.id !== socket.id) {
     const partner = waitingUser;
+    waitingUser = null;
 
     socket.partner = partner.id;
     partner.partner = socket.id;
 
     io.to(partner.id).emit("matched", socket.id);
     io.to(socket.id).emit("matched", partner.id);
-
-    waitingUser = null;
   } else {
     waitingUser = socket;
   }
@@ -49,9 +54,7 @@ io.on("connection", (socket) => {
 
     socket.partner = null;
 
-    if (!waitingUser) {
-      waitingUser = socket;
-    }
+    waitingUser = socket;
   });
 
   socket.on("disconnect", () => {
