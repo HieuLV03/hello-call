@@ -1,4 +1,3 @@
-// server.js
 const express = require("express");
 const http = require("http");
 const { Server } = require("socket.io");
@@ -13,91 +12,77 @@ const io = new Server(server, {
   cors: { origin: "*" },
 });
 
-const users = new Map(); // id -> { id, partner, status }
-
-const matchUsers = () => {
-  const waiting = Array.from(users.values()).filter(u => u.status === "waiting");
-
-  while (waiting.length >= 2) {
-    const a = waiting.shift();
-    const b = waiting.shift();
-
-    a.partner = b.id;
-    b.partner = a.id;
-    a.status = "paired";
-    b.status = "paired";
-
-    users.set(a.id, a);
-    users.set(b.id, b);
-
-    console.log(`✅ Matched: ${a.id} <-> ${b.id}`);
-
-    io.to(a.id).emit("matched", b.id);
-    io.to(b.id).emit("matched", a.id);
-  }
-};
+let queue = [];
 
 io.on("connection", (socket) => {
-  console.log("🔗 Connected:", socket.id);
+  console.log("Connected:", socket.id);
 
-  users.set(socket.id, {
-    id: socket.id,
-    partner: null,
-    status: "idle",
-  });
+  socket.partner = null;
 
   socket.on("join", () => {
-    const user = users.get(socket.id);
-    if (user) {
-      user.status = "waiting";
-      user.partner = null;
-      users.set(socket.id, user);
-      console.log(`👤 ${socket.id} joined waiting queue`);
-      matchUsers();
+    if (!queue.includes(socket)) {
+      queue.push(socket);
     }
+
+    match();
   });
 
+  const match = () => {
+    queue = queue.filter((s) => s.connected && !s.partner);
+
+    while (queue.length >= 2) {
+      const a = queue.shift();
+      const b = queue.shift();
+
+      if (!a || !b) return;
+
+      a.partner = b.id;
+      b.partner = a.id;
+
+      console.log(`MATCH: ${a.id} <-> ${b.id}`);
+
+      io.to(a.id).emit("matched", {
+        partnerId: b.id,
+        initiator: true,
+      });
+
+      io.to(b.id).emit("matched", {
+        partnerId: a.id,
+        initiator: false,
+      });
+    }
+  };
+
   socket.on("signal", ({ to, data }) => {
-    io.to(to).emit("signal", { from: socket.id, data });
+    io.to(to).emit("signal", {
+      from: socket.id,
+      data,
+    });
   });
 
   socket.on("next", () => {
-    const user = users.get(socket.id);
-    if (!user) return;
-
-    if (user.partner) {
-      io.to(user.partner).emit("partner-disconnected");
-      const partner = users.get(user.partner);
-      if (partner) {
-        partner.partner = null;
-        partner.status = "waiting";
-        users.set(partner.id, partner);
-      }
+    if (socket.partner) {
+      io.to(socket.partner).emit("partner-disconnected");
     }
 
-    user.partner = null;
-    user.status = "waiting";
-    users.set(socket.id, user);
-    matchUsers();
+    socket.partner = null;
+
+    if (!queue.includes(socket)) {
+      queue.push(socket);
+    }
+
+    match();
   });
 
   socket.on("disconnect", () => {
-    const user = users.get(socket.id);
-    if (user?.partner) {
-      io.to(user.partner).emit("partner-disconnected");
-      const partner = users.get(user.partner);
-      if (partner) {
-        partner.partner = null;
-        partner.status = "waiting";
-        users.set(partner.id, partner);
-      }
+    queue = queue.filter((s) => s.id !== socket.id);
+
+    if (socket.partner) {
+      io.to(socket.partner).emit("partner-disconnected");
     }
-    console.log("❌ Disconnected:", socket.id);
-    users.delete(socket.id);
   });
 });
 
-const PORT = process.env.PORT || 3001;
-server.listen(PORT, () => {
-  console.log(`🚀 Socket Server running on port ${PORT}`);
+server.listen(3001, () => {
+  console.log("server running");
 });
