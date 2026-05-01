@@ -4,7 +4,6 @@ const { Server } = require("socket.io");
 const cors = require("cors");
 
 const app = express();
-
 app.use(cors());
 
 const server = http.createServer(app);
@@ -67,5 +66,5 @@ io.on("connection", (socket) => {
 });
 
 server.listen(3001, "0.0.0.0", () => {
-console.log("Server running on 3001");
+  console.log("Server running on 3001");
 });
