@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import Peer from "simple-peer";
-import { getSocket } from "@/lib/socket";
+import { getSocket } from "../socket";
 
 const socket = getSocket();
 
