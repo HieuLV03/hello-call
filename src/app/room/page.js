@@ -1,21 +1,27 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { useRouter } from "next/navigation";
 import { io } from "socket.io-client";
 import Peer from "simple-peer";
 
 const socket = io("https://hello-call-socket-production.up.railway.app", {
   transports: ["websocket"],
+  autoConnect: false, // 🔥 quan trọng
 });
 
 export default function Room() {
+  const router = useRouter();
+
   const myVideo = useRef(null);
   const userVideo = useRef(null);
-
   const peerRef = useRef(null);
 
   useEffect(() => {
     let stream;
+
+    // 🔥 connect SOCKET khi vào room
+    socket.connect();
 
     navigator.mediaDevices
       .getUserMedia({ video: true, audio: true })
@@ -23,10 +29,9 @@ export default function Room() {
         stream = mediaStream;
         myVideo.current.srcObject = stream;
 
-        // 🔥 join queue
+        // join queue
         socket.emit("join");
 
-        // ================= MATCH =================
         socket.on("matched", (partnerId) => {
           const peer = new Peer({
             initiator: true,
@@ -41,21 +46,19 @@ export default function Room() {
             });
           });
 
-          peer.on("stream", (remoteStream) => {
-            userVideo.current.srcObject = remoteStream;
+          peer.on("stream", (remote) => {
+            userVideo.current.srcObject = remote;
           });
 
           peerRef.current = peer;
         });
 
-        // ================= SIGNAL =================
         socket.on("signal", ({ data }) => {
           try {
             peerRef.current?.signal(data);
           } catch (e) {}
         });
 
-        // ================= DISCONNECT =================
         socket.on("partner-disconnected", () => {
           peerRef.current?.destroy();
           peerRef.current = null;
@@ -65,9 +68,7 @@ export default function Room() {
 
     return () => {
       socket.emit("leave");
-      socket.off("matched");
-      socket.off("signal");
-      socket.off("partner-disconnected");
+      socket.disconnect();
     };
   }, []);
 
@@ -88,6 +89,10 @@ export default function Room() {
 
       <button onClick={next} className="bg-white px-4 py-2">
         Next
+      </button>
+
+      <button onClick={() => router.push("/")} className="text-red-500">
+        Thoát
       </button>
     </div>
   );
