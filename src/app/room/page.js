@@ -7,7 +7,7 @@ import Peer from "simple-peer";
 
 const socket = io("https://hello-call-socket-production.up.railway.app", {
   transports: ["websocket"],
-  autoConnect: false, // 🔥 quan trọng
+  autoConnect: false,
 });
 
 export default function Room() {
@@ -20,7 +20,6 @@ export default function Room() {
   useEffect(() => {
     let stream;
 
-    // 🔥 connect SOCKET khi vào room
     socket.connect();
 
     navigator.mediaDevices
@@ -29,10 +28,14 @@ export default function Room() {
         stream = mediaStream;
         myVideo.current.srcObject = stream;
 
-        // join queue
         socket.emit("join");
 
         socket.on("matched", (partnerId) => {
+          if (peerRef.current) {
+            peerRef.current.destroy();
+            peerRef.current = null;
+          }
+
           const peer = new Peer({
             initiator: true,
             trickle: false,
@@ -50,13 +53,20 @@ export default function Room() {
             userVideo.current.srcObject = remote;
           });
 
+          peer.on("error", (e) => {
+            console.log("peer error:", e);
+          });
+
           peerRef.current = peer;
         });
 
         socket.on("signal", ({ data }) => {
           try {
-            peerRef.current?.signal(data);
-          } catch (e) {}
+            if (!peerRef.current) return;
+            peerRef.current.signal(data);
+          } catch (e) {
+            console.log("signal error ignored");
+          }
         });
 
         socket.on("partner-disconnected", () => {
@@ -68,6 +78,9 @@ export default function Room() {
 
     return () => {
       socket.emit("leave");
+      socket.off("matched");
+      socket.off("signal");
+      socket.off("partner-disconnected");
       socket.disconnect();
     };
   }, []);

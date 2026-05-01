@@ -12,23 +12,27 @@ const io = new Server(server, {
   cors: { origin: "*" },
 });
 
-const queue = [];
+const queue = new Set(); // 🔥 dùng Set chống duplicate
 
-const add = (s) => {
-  if (!queue.includes(s)) queue.push(s);
+const removeFromQueue = (socket) => {
+  queue.delete(socket);
 };
 
-const remove = (s) => {
-  const i = queue.indexOf(s);
-  if (i !== -1) queue.splice(i, 1);
+const addToQueue = (socket) => {
+  queue.add(socket);
 };
 
-const match = () => {
-  while (queue.length >= 2) {
-    const a = queue.shift();
-    const b = queue.shift();
+const matchUsers = () => {
+  const users = Array.from(queue);
+
+  while (users.length >= 2) {
+    const a = users.shift();
+    const b = users.shift();
 
     if (!a || !b) return;
+
+    removeFromQueue(a);
+    removeFromQueue(b);
 
     a.partner = b.id;
     b.partner = a.id;
@@ -42,8 +46,8 @@ io.on("connection", (socket) => {
   socket.partner = null;
 
   socket.on("join", () => {
-    add(socket);
-    match();
+    addToQueue(socket);
+    matchUsers();
   });
 
   socket.on("signal", ({ to, data }) => {
@@ -51,20 +55,27 @@ io.on("connection", (socket) => {
   });
 
   socket.on("next", () => {
-    socket.partner = null;
-    add(socket);
-    match();
-  });
+    if (socket.partner) {
+      io.to(socket.partner).emit("partner-disconnected");
 
-  socket.on("leave", () => {
-    remove(socket);
+      const partner = io.sockets.sockets.get(socket.partner);
+      if (partner) partner.partner = null;
+    }
+
+    socket.partner = null;
+
+    addToQueue(socket);
+    matchUsers();
   });
 
   socket.on("disconnect", () => {
-    remove(socket);
+    removeFromQueue(socket);
 
     if (socket.partner) {
       io.to(socket.partner).emit("partner-disconnected");
+
+      const partner = io.sockets.sockets.get(socket.partner);
+      if (partner) partner.partner = null;
     }
   });
 });
