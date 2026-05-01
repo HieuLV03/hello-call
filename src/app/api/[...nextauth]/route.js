@@ -8,9 +8,12 @@ const handler = NextAuth({
       clientSecret: process.env.GOOGLE_CLIENT_SECRET,
     }),
   ],
+
   session: {
     strategy: "jwt",
   },
+
+  secret: process.env.NEXTAUTH_SECRET, // 👈 CỰC KỲ QUAN TRỌNG
 });
 
 export { handler as GET, handler as POST };
