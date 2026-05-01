@@ -3,8 +3,7 @@
 import { useEffect, useRef } from "react";
 import io from "socket.io-client";
 import Peer from "simple-peer";
-
-const socket = io("http://192.168.1.106:3001");
+const socket = io("https://hello-call-socket-production.up.railway.app");
 export default function Home() {
   const myVideo = useRef();
   const userVideo = useRef();
