@@ -9,7 +9,7 @@ const socket = io("https://hello-call-socket-production.up.railway.app");
 export default function Home() {
   const myVideo = useRef(null);
   const userVideo = useRef(null);
-
+const peerReady = useRef(false);
   const peerRef = useRef(null);
   const pendingSignals = useRef([]);
 
@@ -35,10 +35,10 @@ const handleSignal = ({ data }) => {
     return;
   }
 
-  if (
-    peerRef.current.destroyed ||
-    peerRef.current.destroying
-  ) return;
+  if (!peerReady.current) {
+    pendingSignals.current.push(data);
+    return;
+  }
 
   try {
     peerRef.current.signal(data);
@@ -76,48 +76,49 @@ const handleSignal = ({ data }) => {
     };
   }, []);
 
-  const createPeer = (partnerId, stream) => {
-    if (peerRef.current) {
-      peerRef.current.destroy();
-    }
+const createPeer = (partnerId, stream) => {
+  if (peerRef.current) {
+    peerRef.current.destroy();
+  }
 
-    const peer = new Peer({
-      initiator: true,
-      trickle: false,
-      stream,
+  peerReady.current = false;
+
+  const peer = new Peer({
+    initiator: true,
+    trickle: false,
+    stream,
+  });
+
+  peer.on("signal", (data) => {
+    socket.emit("signal", {
+      to: partnerId,
+      data,
     });
+  });
 
-    peer.on("signal", (data) => {
-      socket.emit("signal", {
-        to: partnerId,
-        data,
-      });
-    });
+  peer.on("stream", (remoteStream) => {
+    userVideo.current.srcObject = remoteStream;
+  });
 
-    peer.on("stream", (remoteStream) => {
-      if (userVideo.current) {
-        userVideo.current.srcObject = remoteStream;
-      }
-    });
+  peer.on("connect", () => {
+    peerReady.current = true;
 
-    peer.on("error", (err) => {
-      console.error("peer error:", err);
-    });
-
-    peerRef.current = peer;
-
-    // 🔥 flush pending signals
+    // 🔥 flush đúng thời điểm
     pendingSignals.current.forEach((sig) => {
       try {
         peer.signal(sig);
-      } catch (e) {
-        console.warn("pending signal error:", e);
-      }
+      } catch (e) {}
     });
 
     pendingSignals.current = [];
-  };
+  });
 
+  peer.on("error", (err) => {
+    console.error("peer error:", err);
+  });
+
+  peerRef.current = peer;
+};
   const nextUser = () => {
     if (peerRef.current) {
       peerRef.current.destroy();
