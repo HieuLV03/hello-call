@@ -25,9 +25,10 @@ export default function Home() {
           myVideo.current.srcObject = stream;
         }
 
-        const handleMatched = (partnerId) => {
-          createPeer(partnerId, stream);
-        };
+    const handleMatched = (partnerId) => {
+  pendingSignals.current = [];
+  createPeer(partnerId, stream);
+};
 const handleSignal = ({ data }) => {
   if (!peerRef.current) {
     pendingSignals.current.push(data);

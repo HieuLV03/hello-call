@@ -19,13 +19,14 @@ io.on("connection", (socket) => {
 
   socket.partner = null;
 
-  // 🔥 CLEAN WAITING USER nếu bị dead socket
+  // 🔥 remove invalid waiting user
   if (waitingUser && !waitingUser.connected) {
     waitingUser = null;
   }
 
-  // 🔥 MATCH LOGIC CHUẨN
-  if (waitingUser && waitingUser.id !== socket.id) {
+  const tryMatch = () => {
+    if (!waitingUser || waitingUser.id === socket.id) return;
+
     const partner = waitingUser;
     waitingUser = null;
 
@@ -34,6 +35,11 @@ io.on("connection", (socket) => {
 
     io.to(partner.id).emit("matched", socket.id);
     io.to(socket.id).emit("matched", partner.id);
+  };
+
+  // 🔥 try match immediately
+  if (!socket.partner) {
+    tryMatch();
   } else {
     waitingUser = socket;
   }
@@ -54,6 +60,7 @@ io.on("connection", (socket) => {
 
     socket.partner = null;
 
+    // 🔥 IMPORTANT: không set waiting ngay lập tức
     waitingUser = socket;
   });
 
