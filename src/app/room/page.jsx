@@ -2,39 +2,31 @@
 
 import { useEffect, useRef } from "react";
 import Peer from "simple-peer";
-import { getSocket } from "../socket";
+import { getSocket } from "@/lib/socket";
 
 const socket = getSocket();
 
 export default function Room() {
-  const myVideo = useRef<HTMLVideoElement | null>(null);
-  const userVideo = useRef<HTMLVideoElement | null>(null);
-
-  const peerRef = useRef<any>(null);
-  const streamRef = useRef<MediaStream | null>(null);
+  const myVideo = useRef(null);
+  const userVideo = useRef(null);
+  const peerRef = useRef(null);
 
   useEffect(() => {
-    let mounted = true;
+    let stream;
 
-    const init = async () => {
-      const stream = await navigator.mediaDevices.getUserMedia({
+    const start = async () => {
+      stream = await navigator.mediaDevices.getUserMedia({
         video: true,
         audio: true,
       });
 
-      if (!mounted) return;
-
-      streamRef.current = stream;
-
-      // ✅ FIX NULL SAFE
-      if (myVideo.current) {
-        myVideo.current.srcObject = stream;
-      }
+      myVideo.current.srcObject = stream;
 
       if (!socket.connected) socket.connect();
 
       socket.emit("join");
 
+      // ================= MATCH =================
       socket.on("matched", ({ partnerId, initiator }) => {
         if (peerRef.current) peerRef.current.destroy();
 
@@ -51,37 +43,32 @@ export default function Room() {
           });
         });
 
-        peer.on("stream", (remoteStream) => {
-          if (userVideo.current) {
-            userVideo.current.srcObject = remoteStream;
-          }
+        peer.on("stream", (remote) => {
+          userVideo.current.srcObject = remote;
         });
 
         peerRef.current = peer;
       });
 
+      // ================= SIGNAL =================
       socket.on("signal", ({ data }) => {
-        try {
-          peerRef.current?.signal(data);
-        } catch (e) {}
+        peerRef.current?.signal(data);
       });
 
+      // ================= DISCONNECT =================
       socket.on("partner-disconnected", () => {
         peerRef.current?.destroy();
         peerRef.current = null;
-
-        if (userVideo.current) {
-          userVideo.current.srcObject = null;
-        }
+        userVideo.current.srcObject = null;
       });
     };
 
-    init();
+    start();
 
     return () => {
-      mounted = false;
-
       socket.emit("next");
+      socket.disconnect();
+
       socket.off("matched");
       socket.off("signal");
       socket.off("partner-disconnected");
@@ -91,22 +78,20 @@ export default function Room() {
   const next = () => {
     peerRef.current?.destroy();
     peerRef.current = null;
-
-    if (userVideo.current) {
-      userVideo.current.srcObject = null;
-    }
+    userVideo.current.srcObject = null;
 
     socket.emit("next");
   };
 
   return (
-    <div className="h-screen bg-black flex flex-col items-center justify-center">
+    <div className="h-screen bg-black flex flex-col items-center justify-center gap-5">
+
       <div className="flex gap-5">
-        <video ref={myVideo} autoPlay muted playsInline className="w-[300px]" />
-        <video ref={userVideo} autoPlay playsInline className="w-[300px]" />
+        <video ref={myVideo} autoPlay muted className="w-[300px]" />
+        <video ref={userVideo} autoPlay className="w-[300px]" />
       </div>
 
-      <button onClick={next} className="bg-white px-4 py-2 mt-5">
+      <button onClick={next} className="bg-white px-4 py-2">
         Next
       </button>
     </div>
