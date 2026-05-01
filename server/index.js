@@ -12,14 +12,23 @@ const io = new Server(server, {
   cors: { origin: "*" },
 });
 
+// ================= QUEUE =================
 let queue = [];
 
-const cleanQueue = () => {
-  queue = queue.filter((s) => s.connected && !s.partner);
+const removeFromQueue = (socketId) => {
+  queue = queue.filter((s) => s.id !== socketId);
 };
 
-const tryMatch = () => {
-  cleanQueue();
+const addToQueue = (socket) => {
+  removeFromQueue(socket.id);
+
+  if (!socket.partner) {
+    queue.push(socket);
+  }
+};
+
+const matchUsers = () => {
+  queue = queue.filter((s) => s.connected && !s.partner);
 
   while (queue.length >= 2) {
     const a = queue.shift();
@@ -35,36 +44,19 @@ const tryMatch = () => {
   }
 };
 
+// ================= SOCKET =================
 io.on("connection", (socket) => {
   console.log("Connected:", socket.id);
 
   socket.partner = null;
 
-  const joinQueue = () => {
-    cleanQueue();
-
-    // ❌ remove socket cũ nếu tồn tại
-    queue = queue.filter((s) => s.id !== socket.id);
-
-    queue.push(socket);
-
-    tryMatch();
-  };
-
+  // join queue
   socket.on("join", () => {
-    joinQueue();
+    addToQueue(socket);
+    matchUsers();
   });
 
-  socket.on("next", () => {
-    if (socket.partner) {
-      io.to(socket.partner).emit("partner-disconnected");
-    }
-
-    socket.partner = null;
-
-    joinQueue();
-  });
-
+  // signal
   socket.on("signal", ({ to, data }) => {
     io.to(to).emit("signal", {
       from: socket.id,
@@ -72,15 +64,30 @@ io.on("connection", (socket) => {
     });
   });
 
+  // next
+  socket.on("next", () => {
+    if (socket.partner) {
+      io.to(socket.partner).emit("partner-disconnected");
+    }
+
+    socket.partner = null;
+
+    addToQueue(socket);
+    matchUsers();
+  });
+
+  // disconnect
   socket.on("disconnect", () => {
-    queue = queue.filter((s) => s.id !== socket.id);
+    removeFromQueue(socket.id);
 
     if (socket.partner) {
       io.to(socket.partner).emit("partner-disconnected");
     }
+
+    socket.partner = null;
   });
 });
 
 server.listen(3001, () => {
-  console.log("server running");
+  console.log("Server running on 3001");
 });
