@@ -4,48 +4,49 @@ import { useEffect, useRef } from "react";
 import io from "socket.io-client";
 import Peer from "simple-peer";
 
-const socket = io("https://hello-call-socket-production.up.railway.app");
+const socket = io("https://hello-call-socket-production.up.railway.app", {
+  transports: ["websocket"],
+});
 
 export default function Home() {
   const myVideo = useRef(null);
   const userVideo = useRef(null);
-const peerReady = useRef(false);
+
   const peerRef = useRef(null);
   const pendingSignals = useRef([]);
 
   useEffect(() => {
-    let streamRef;
+    let stream;
+
+    socket.connect();
 
     navigator.mediaDevices
       .getUserMedia({ video: true, audio: true })
-      .then((stream) => {
-        streamRef = stream;
+      .then((mediaStream) => {
+        stream = mediaStream;
 
         if (myVideo.current) {
           myVideo.current.srcObject = stream;
         }
 
-    const handleMatched = (partnerId) => {
-  pendingSignals.current = [];
-  createPeer(partnerId, stream);
-};
-const handleSignal = ({ data }) => {
-  if (!peerRef.current) {
-    pendingSignals.current.push(data);
-    return;
-  }
+        // ================= SOCKET EVENTS =================
 
-  if (!peerReady.current) {
-    pendingSignals.current.push(data);
-    return;
-  }
+        const handleMatched = (partnerId) => {
+          createPeer(partnerId, stream);
+        };
 
-  try {
-    peerRef.current.signal(data);
-  } catch (err) {
-    console.error(err);
-  }
-};
+        const handleSignal = ({ data }) => {
+          if (!peerRef.current) {
+            pendingSignals.current.push(data);
+            return;
+          }
+
+          try {
+            peerRef.current.signal(data);
+          } catch (err) {
+            console.error("signal error:", err);
+          }
+        };
 
         const handleDisconnect = () => {
           if (peerRef.current) {
@@ -76,49 +77,52 @@ const handleSignal = ({ data }) => {
     };
   }, []);
 
-const createPeer = (partnerId, stream) => {
-  if (peerRef.current) {
-    peerRef.current.destroy();
-  }
+  // ================= CREATE PEER =================
 
-  peerReady.current = false;
+  const createPeer = (partnerId, stream) => {
+    if (peerRef.current) {
+      peerRef.current.destroy();
+    }
 
-  const peer = new Peer({
-    initiator: true,
-    trickle: false,
-    stream,
-  });
-
-  peer.on("signal", (data) => {
-    socket.emit("signal", {
-      to: partnerId,
-      data,
-    });
-  });
-
-  peer.on("stream", (remoteStream) => {
-    userVideo.current.srcObject = remoteStream;
-  });
-
-  peer.on("connect", () => {
-    peerReady.current = true;
-
-    // 🔥 flush đúng thời điểm
-    pendingSignals.current.forEach((sig) => {
-      try {
-        peer.signal(sig);
-      } catch (e) {}
+    const peer = new Peer({
+      initiator: true,
+      trickle: false,
+      stream,
     });
 
-    pendingSignals.current = [];
-  });
+    peer.on("signal", (data) => {
+      socket.emit("signal", {
+        to: partnerId,
+        data,
+      });
+    });
 
-  peer.on("error", (err) => {
-    console.error("peer error:", err);
-  });
+    peer.on("stream", (remoteStream) => {
+      if (userVideo.current) {
+        userVideo.current.srcObject = remoteStream;
+      }
+    });
 
-  peerRef.current = peer;
-};
+    peer.on("error", (err) => {
+      console.error("peer error:", err);
+    });
+
+    peerRef.current = peer;
+
+    // 🔥 flush signal đúng timing (fix stable error)
+    setTimeout(() => {
+      pendingSignals.current.forEach((sig) => {
+        try {
+          peer.signal(sig);
+        } catch (e) {}
+      });
+
+      pendingSignals.current = [];
+    }, 0);
+  };
+
+  // ================= NEXT USER =================
+
   const nextUser = () => {
     if (peerRef.current) {
       peerRef.current.destroy();
