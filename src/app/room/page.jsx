@@ -4,12 +4,13 @@ import { useEffect, useRef } from "react";
 import Peer from "simple-peer";
 import { getSocket } from "../socket";
 
-const socket = getSocket();
-
 export default function Room() {
   const myVideo = useRef(null);
   const userVideo = useRef(null);
   const peerRef = useRef(null);
+  const streamRef = useRef(null);
+
+  const socket = getSocket();
 
   useEffect(() => {
     let stream;
@@ -20,13 +21,13 @@ export default function Room() {
         audio: true,
       });
 
+      streamRef.current = stream;
       myVideo.current.srcObject = stream;
 
       if (!socket.connected) socket.connect();
 
       socket.emit("join");
 
-      // ================= MATCH =================
       socket.on("matched", ({ partnerId, initiator }) => {
         if (peerRef.current) peerRef.current.destroy();
 
@@ -37,10 +38,7 @@ export default function Room() {
         });
 
         peer.on("signal", (data) => {
-          socket.emit("signal", {
-            to: partnerId,
-            data,
-          });
+          socket.emit("signal", { to: partnerId, data });
         });
 
         peer.on("stream", (remote) => {
@@ -50,12 +48,10 @@ export default function Room() {
         peerRef.current = peer;
       });
 
-      // ================= SIGNAL =================
       socket.on("signal", ({ data }) => {
         peerRef.current?.signal(data);
       });
 
-      // ================= DISCONNECT =================
       socket.on("partner-disconnected", () => {
         peerRef.current?.destroy();
         peerRef.current = null;
@@ -67,11 +63,7 @@ export default function Room() {
 
     return () => {
       socket.emit("next");
-      socket.disconnect();
-
-      socket.off("matched");
-      socket.off("signal");
-      socket.off("partner-disconnected");
+      socket.off();
     };
   }, []);
 
@@ -85,7 +77,6 @@ export default function Room() {
 
   return (
     <div className="h-screen bg-black flex flex-col items-center justify-center gap-5">
-
       <div className="flex gap-5">
         <video ref={myVideo} autoPlay muted className="w-[300px]" />
         <video ref={userVideo} autoPlay className="w-[300px]" />
