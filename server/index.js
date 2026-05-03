@@ -14,24 +14,30 @@ const io = new Server(server, {
   },
 });
 
+// CHỈ LƯU ID, KHÔNG LƯU SOCKET OBJECT
 let queue = [];
+let partners = new Map();
 
+/* ================= MATCH USERS ================= */
 const matchUsers = () => {
   while (queue.length >= 2) {
-    const a = queue.shift();
-    const b = queue.shift();
+    const aId = queue.shift();
+    const bId = queue.shift();
 
-    if (!a || !b) return;
+    const a = io.sockets.sockets.get(aId);
+    const b = io.sockets.sockets.get(bId);
 
-    a.partner = b.id;
-    b.partner = a.id;
+    if (!a || !b) continue;
 
-    io.to(a.id).emit("matched", {
+    partners.set(a.id, b.id);
+    partners.set(b.id, a.id);
+
+    a.emit("matched", {
       partnerId: b.id,
       initiator: true,
     });
 
-    io.to(b.id).emit("matched", {
+    b.emit("matched", {
       partnerId: a.id,
       initiator: false,
     });
@@ -40,22 +46,19 @@ const matchUsers = () => {
   }
 };
 
+/* ================= SOCKET ================= */
 io.on("connection", (socket) => {
   console.log("connected:", socket.id);
 
-  socket.partner = null;
+  socket.on("join", () => {
+    console.log("JOIN:", socket.id);
 
-socket.on("join", () => {
-  console.log("JOIN:", socket.id);
+    // tránh duplicate
+    queue = queue.filter((id) => id !== socket.id);
+    queue.push(socket.id);
 
-  const exists = queue.some((s) => s.id === socket.id);
-
-  if (!exists) {
-    queue.push({ id: socket.id });
-  }
-
-  matchUsers();
-});
+    matchUsers();
+  });
 
   socket.on("signal", ({ to, data }) => {
     io.to(to).emit("signal", {
@@ -64,31 +67,40 @@ socket.on("join", () => {
     });
   });
 
-socket.on("next", () => {
-  console.log("NEXT:", socket.id);
+  /* ================= NEXT ================= */
+  socket.on("next", () => {
+    console.log("NEXT:", socket.id);
 
-  queue = queue.filter((s) => s.id !== socket.id);
+    const partnerId = partners.get(socket.id);
 
-  if (socket.partner) {
-    io.to(socket.partner).emit("partner-disconnected");
-  }
+    if (partnerId) {
+      io.to(partnerId).emit("partner-disconnected");
+      partners.delete(partnerId);
+    }
 
-  socket.partner = null;
+    partners.delete(socket.id);
 
-  queue.push({ id: socket.id });
+    queue = queue.filter((id) => id !== socket.id);
+    queue.push(socket.id);
 
-  matchUsers();
-});
+    matchUsers();
+  });
 
-socket.on("disconnect", () => {
-  console.log("DISCONNECT:", socket.id);
+  /* ================= DISCONNECT ================= */
+  socket.on("disconnect", () => {
+    console.log("DISCONNECT:", socket.id);
 
-  queue = queue.filter((s) => s.id !== socket.id);
+    const partnerId = partners.get(socket.id);
 
-  if (socket.partner) {
-    io.to(socket.partner).emit("partner-disconnected");
-  }
-});
+    if (partnerId) {
+      io.to(partnerId).emit("partner-disconnected");
+      partners.delete(partnerId);
+    }
+
+    partners.delete(socket.id);
+
+    queue = queue.filter((id) => id !== socket.id);
+  });
 });
 
 server.listen(3001, () => {
