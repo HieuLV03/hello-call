@@ -12,13 +12,15 @@ const io = new Server(server, {
   cors: { origin: "*" },
 });
 
-let queue = []; // chỉ chứa socket.id
-let partners = new Map(); // socket.id -> partnerId
+// user state
+let onlineUsers = new Map(); // socketId -> { email, status }
+let readyQueue = []; // chỉ chứa socketId
+let partners = new Map();
 
 function tryMatch() {
-  while (queue.length >= 2) {
-    const a = queue.shift();
-    const b = queue.shift();
+  while (readyQueue.length >= 2) {
+    const a = readyQueue.shift();
+    const b = readyQueue.shift();
 
     if (!a || !b) continue;
 
@@ -42,10 +44,28 @@ function tryMatch() {
 io.on("connection", (socket) => {
   console.log("CONNECT:", socket.id);
 
-  socket.on("join", () => {
-    if (!queue.includes(socket.id) && !partners.has(socket.id)) {
-      queue.push(socket.id);
+  // LOGIN GG xong
+  socket.on("login", ({ email }) => {
+    onlineUsers.set(socket.id, {
+      email,
+      status: "online",
+    });
+
+    console.log("ONLINE:", email);
+  });
+
+  // CLICK MATCH BUTTON
+  socket.on("ready", () => {
+    const user = onlineUsers.get(socket.id);
+    if (!user) return;
+
+    user.status = "ready";
+
+    if (!readyQueue.includes(socket.id) && !partners.has(socket.id)) {
+      readyQueue.push(socket.id);
     }
+
+    console.log("READY:", socket.id);
 
     tryMatch();
   });
@@ -57,16 +77,18 @@ io.on("connection", (socket) => {
     });
   });
 
+  // NEXT (skip user)
   socket.on("next", () => {
     const partner = partners.get(socket.id);
 
     partners.delete(socket.id);
-    queue.push(socket.id);
+
+    readyQueue.push(socket.id);
 
     if (partner) {
       partners.delete(partner);
       io.to(partner).emit("partner-disconnected");
-      queue.push(partner);
+      readyQueue.push(partner);
     }
 
     tryMatch();
@@ -75,15 +97,17 @@ io.on("connection", (socket) => {
   socket.on("disconnect", () => {
     console.log("DISCONNECT:", socket.id);
 
-    queue = queue.filter((id) => id !== socket.id);
+    readyQueue = readyQueue.filter((id) => id !== socket.id);
+    onlineUsers.delete(socket.id);
 
     const partner = partners.get(socket.id);
+
     partners.delete(socket.id);
 
     if (partner) {
       partners.delete(partner);
       io.to(partner).emit("partner-disconnected");
-      queue.push(partner);
+      readyQueue.push(partner);
     }
 
     tryMatch();
@@ -91,5 +115,5 @@ io.on("connection", (socket) => {
 });
 
 server.listen(3001, () => {
-  console.log("Server running 3001");
+  console.log("Server running on 3001");
 });

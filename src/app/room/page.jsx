@@ -29,7 +29,11 @@ export default function Room() {
 
       myVideo.current.srcObject = stream;
 
-      socket.emit("join");
+     socket.emit("login", {
+  email: session?.user?.email
+});
+
+socket.emit("ready");
 
       socket.on("matched", ({ partnerId, initiator }) => {
         if (peerRef.current) peerRef.current.destroy();
