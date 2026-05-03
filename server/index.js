@@ -1,18 +1,15 @@
-let queue = [];
+let readyQueue = new Set();
 let partners = new Map();
 
-function cleanQueue() {
-  queue = queue.filter((id) => !partners.has(id));
-}
-
 function tryMatch(io) {
-  cleanQueue();
+  const list = Array.from(readyQueue).filter((id) => !partners.has(id));
 
-  while (queue.length >= 2) {
-    const a = queue.shift();
-    const b = queue.shift();
+  while (list.length >= 2) {
+    const a = list.shift();
+    const b = list.shift();
 
-    if (!a || !b) continue;
+    readyQueue.delete(a);
+    readyQueue.delete(b);
 
     partners.set(a, b);
     partners.set(b, a);
@@ -32,14 +29,11 @@ io.on("connection", (socket) => {
   });
 
   socket.on("ready", () => {
-    // ❌ chống spam queue
     if (partners.has(socket.id)) return;
 
-    if (!queue.includes(socket.id)) {
-      queue.push(socket.id);
-    }
+    readyQueue.add(socket.id);
 
-    console.log("QUEUE:", queue);
+    console.log("READY QUEUE SIZE:", readyQueue.size);
 
     tryMatch(io);
   });
@@ -49,14 +43,13 @@ io.on("connection", (socket) => {
 
     partners.delete(socket.id);
 
-    queue.push(socket.id);
-
     if (partner) {
       partners.delete(partner);
       io.to(partner).emit("partner-disconnected");
-
-      queue.push(partner);
+      readyQueue.add(partner);
     }
+
+    readyQueue.add(socket.id);
 
     tryMatch(io);
   });
@@ -64,13 +57,13 @@ io.on("connection", (socket) => {
   socket.on("disconnect", () => {
     const partner = partners.get(socket.id);
 
-    queue = queue.filter((id) => id !== socket.id);
+    readyQueue.delete(socket.id);
     partners.delete(socket.id);
 
     if (partner) {
       partners.delete(partner);
       io.to(partner).emit("partner-disconnected");
-      queue.push(partner);
+      readyQueue.add(partner);
     }
 
     tryMatch(io);

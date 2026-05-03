@@ -24,50 +24,42 @@ useEffect(() => {
 
   socketRef.current = socket;
 
-  const start = async () => {
-    const stream = await navigator.mediaDevices.getUserMedia({
-      video: true,
-      audio: true,
+const start = async () => {
+  const stream = await navigator.mediaDevices.getUserMedia({
+    video: true,
+    audio: true,
+  });
+
+  o.current = stream;
+  r.current.srcObject = stream;
+
+  l.emit("login", { email: e.user.email });
+
+  // ✔ CHỈ READY SAU KHI STREAM OK
+  setTimeout(() => {
+    l.emit("ready");
+  }, 300);
+
+  l.on("matched", ({ partnerId, initiator }) => {
+    if (i.current) i.current.destroy();
+
+    const peer = new Peer({
+      initiator,
+      trickle: false,
+      stream,
     });
 
-    streamRef.current = stream;
-    myVideo.current.srcObject = stream;
-
-    // ✔ login ONLY
-    socket.emit("login", { email: session.user.email });
-
-    // ❌ KHÔNG ready ở đây nữa
-    socket.emit("ready"); // chỉ giữ 1 lần OK
-
-    socket.on("matched", ({ partnerId, initiator }) => {
-      if (peerRef.current) peerRef.current.destroy();
-
-      const peer = new Peer({
-        initiator,
-        trickle: false,
-        stream,
-      });
-
-      peer.on("signal", (data) => {
-        socket.emit("signal", { to: partnerId, data });
-      });
-
-      peer.on("stream", (remoteStream) => {
-        userVideo.current.srcObject = remoteStream;
-      });
-
-      peerRef.current = peer;
+    peer.on("signal", (data) => {
+      l.emit("signal", { to: partnerId, data });
     });
 
-    socket.on("partner-disconnected", () => {
-      peerRef.current?.destroy();
-      peerRef.current = null;
-      userVideo.current.srcObject = null;
-
-      // ✔ chỉ push lại queue khi cần
-      socket.emit("ready");
+    peer.on("stream", (remote) => {
+      t.current.srcObject = remote;
     });
-  };
+
+    i.current = peer;
+  });
+};
 
   start();
 
