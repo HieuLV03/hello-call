@@ -11,16 +11,15 @@ const server = http.createServer(app);
 const io = new Server(server, {
   cors: { origin: "*" },
 });
-
 let queue = [];
 let partners = new Map();
-let users = new Map(); // email tracking
+let users = new Map(); // socketId -> email
 
 function removeFromQueue(id) {
   queue = queue.filter((x) => x !== id);
 }
 
-function tryMatch() {
+function tryMatch(io) {
   queue = queue.filter((id) => !partners.has(id));
 
   while (queue.length >= 2) {
@@ -32,15 +31,8 @@ function tryMatch() {
     partners.set(a, b);
     partners.set(b, a);
 
-    io.to(a).emit("matched", {
-      partnerId: b,
-      initiator: true,
-    });
-
-    io.to(b).emit("matched", {
-      partnerId: a,
-      initiator: false,
-    });
+    io.to(a).emit("matched", { partnerId: b, initiator: true });
+    io.to(b).emit("matched", { partnerId: a, initiator: false });
 
     console.log("MATCH:", a, b);
   }
@@ -49,9 +41,10 @@ function tryMatch() {
 io.on("connection", (socket) => {
   console.log("CONNECT:", socket.id);
 
-  // 🔥 FIX: login phải có
   socket.on("login", ({ email }) => {
-    users.set(socket.id, { email });
+    socket.email = email;
+    users.set(socket.id, email);
+
     console.log("LOGIN:", email);
   });
 
@@ -64,7 +57,7 @@ io.on("connection", (socket) => {
 
     console.log("READY:", socket.id);
 
-    tryMatch();
+    tryMatch(io);
   });
 
   socket.on("signal", ({ to, data }) => {
@@ -90,7 +83,7 @@ io.on("connection", (socket) => {
 
     queue.push(socket.id);
 
-    tryMatch();
+    tryMatch(io);
   });
 
   socket.on("disconnect", () => {
@@ -104,11 +97,10 @@ io.on("connection", (socket) => {
       partners.delete(partner);
       io.to(partner).emit("partner-disconnected");
       removeFromQueue(partner);
-
       queue.push(partner);
     }
 
-    tryMatch();
+    tryMatch(io);
   });
 });
 
