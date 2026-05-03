@@ -1,34 +1,23 @@
-const express = require("express");
-const http = require("http");
-const { Server } = require("socket.io");
-const cors = require("cors");
-
-const app = express();
-app.use(cors());
-
-const server = http.createServer(app);
-
-const io = new Server(server, {
-  cors: { origin: "*" },
-});
-
 let queue = [];
 let partners = new Map();
 let users = new Map();
+let readySet = new Set();
 
 function removeFromQueue(id) {
   queue = queue.filter((x) => x !== id);
 }
 
-function tryMatch() {
-  // lọc người đã có partner
-  queue = queue.filter((id) => !partners.has(id));
+function tryMatch(io) {
+  queue = queue.filter((id) => readySet.has(id) && !partners.has(id));
 
   while (queue.length >= 2) {
     const a = queue.shift();
     const b = queue.shift();
 
     if (!a || !b) return;
+
+    readySet.delete(a);
+    readySet.delete(b);
 
     partners.set(a, b);
     partners.set(b, a);
@@ -50,51 +39,56 @@ io.on("connection", (socket) => {
   socket.on("ready", () => {
     if (partners.has(socket.id)) return;
 
+    readySet.add(socket.id);
+
     removeFromQueue(socket.id);
     queue.push(socket.id);
 
     console.log("READY:", socket.id, "QUEUE:", queue.length);
 
-    tryMatch();
+    tryMatch(io);
   });
 
   socket.on("next", () => {
     const partner = partners.get(socket.id);
 
     partners.delete(socket.id);
+    readySet.add(socket.id);
+
     removeFromQueue(socket.id);
+    queue.push(socket.id);
 
     if (partner) {
       partners.delete(partner);
-      removeFromQueue(partner);
+      readySet.add(partner);
 
       io.to(partner).emit("partner-disconnected");
+
+      removeFromQueue(partner);
       queue.push(partner);
     }
 
-    queue.push(socket.id);
-    tryMatch();
+    tryMatch(io);
   });
 
   socket.on("disconnect", () => {
     const partner = partners.get(socket.id);
 
     partners.delete(socket.id);
+    readySet.delete(socket.id);
     removeFromQueue(socket.id);
     users.delete(socket.id);
 
     if (partner) {
       partners.delete(partner);
-      removeFromQueue(partner);
+      readySet.add(partner);
 
       io.to(partner).emit("partner-disconnected");
+
+      removeFromQueue(partner);
       queue.push(partner);
     }
 
-    tryMatch();
+    tryMatch(io);
   });
-});
-
-server.listen(3001, () => {
-  console.log("Server running on 3001");
 });

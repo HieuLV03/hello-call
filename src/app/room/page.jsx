@@ -72,7 +72,6 @@ export default function Room() {
         peerRef.current = null;
         userVideo.current.srcObject = null;
 
-        socket.emit("ready");
       });
     };
 
@@ -91,7 +90,6 @@ export default function Room() {
     userVideo.current.srcObject = null;
 
     socketRef.current.emit("next");
-    socketRef.current.emit("ready");
   };
 
   return (
