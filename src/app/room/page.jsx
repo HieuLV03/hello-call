@@ -33,9 +33,19 @@ export default function Room() {
       myVideo.current.srcObject = stream;
 
       socket.emit("login", { email: session.user.email });
+const socket = io("https://hello-call-socket-production.up.railway.app", {
+  transports: ["websocket"],
+});
+
+socketRef.current = socket;
+
 socket.on("connect", () => {
   socket.emit("login", { email: session.user.email });
-  socket.emit("ready");
+
+  // CHỜ LOGIN ổn định 300ms
+  setTimeout(() => {
+    socket.emit("ready");
+  }, 300);
 });
       socket.on("matched", ({ partnerId, initiator }) => {
         if (peerRef.current) peerRef.current.destroy();
