@@ -33,7 +33,7 @@ export default function Room() {
         myVideo.current.srcObject = stream;
       }
 
-      socket.emit("join");
+n.emit("join", { email: "user" });
 
       socket.on("matched", ({ partnerId, initiator }) => {
         if (peerRef.current) peerRef.current.destroy();

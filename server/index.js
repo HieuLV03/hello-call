@@ -13,17 +13,17 @@ const io = new Server(server, {
 });
 
 let queue = new Set();
-let users = new Map(); // socketId -> { email, partner }
+let users = new Map();
 
-function matchUsers() {
-  const candidates = Array.from(queue).filter((id) => {
+function matchUsers(io) {
+  const list = Array.from(queue).filter(id => {
     const u = users.get(id);
     return u && !u.partner;
   });
 
-  while (candidates.length >= 2) {
-    const a = candidates.shift();
-    const b = candidates.shift();
+  while (list.length >= 2) {
+    const a = list.shift();
+    const b = list.shift();
 
     queue.delete(a);
     queue.delete(b);
@@ -44,75 +44,48 @@ function matchUsers() {
     console.log("MATCH:", a, b);
   }
 }
-
 io.on("connection", (socket) => {
   console.log("CONNECT:", socket.id);
 
   users.set(socket.id, {
-    email: null,
     partner: null,
   });
 
-  socket.on("join", ({ email }) => {
-    const user = users.get(socket.id);
-    if (!user) return;
+  socket.on("join", () => {
+    queue.add(socket.id);
 
-    user.email = email;
-
-    if (!user.partner) {
-      queue.add(socket.id);
-    }
-
-    matchUsers();
+    matchUsers(io); // 🔥 QUAN TRỌNG: phải gọi ngay
   });
 
   socket.on("next", () => {
     const user = users.get(socket.id);
-    if (!user) return;
 
-    const partner = user.partner;
+    if (user?.partner) {
+      io.to(user.partner).emit("partner-disconnected");
+      users.get(user.partner).partner = null;
+    }
 
     user.partner = null;
 
     queue.add(socket.id);
 
-    if (partner) {
-      const p = users.get(partner);
-      if (p) p.partner = null;
-
-      io.to(partner).emit("partner-disconnected");
-    }
-
-    matchUsers();
-  });
-
-  socket.on("signal", ({ to, data }) => {
-    io.to(to).emit("signal", {
-      from: socket.id,
-      data,
-    });
+    matchUsers(io);
   });
 
   socket.on("disconnect", () => {
-    const user = users.get(socket.id);
-
-    if (!user) return;
-
     queue.delete(socket.id);
 
-    const partner = user.partner;
+    const user = users.get(socket.id);
+    const partner = user?.partner;
 
     if (partner) {
-      const p = users.get(partner);
-      if (p) p.partner = null;
-
+      users.get(partner).partner = null;
       io.to(partner).emit("partner-disconnected");
     }
 
     users.delete(socket.id);
   });
 });
-
 server.listen(3001, () => {
   console.log("Server running on 3001");
 });
