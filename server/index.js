@@ -11,22 +11,24 @@ const server = http.createServer(app);
 const io = new Server(server, {
   cors: { origin: "*" },
 });
+
 let queue = [];
 let partners = new Map();
-let users = new Map(); // socketId -> email
+let users = new Map();
 
 function removeFromQueue(id) {
   queue = queue.filter((x) => x !== id);
 }
 
-function tryMatch(io) {
+function tryMatch() {
+  // lọc người đã có partner
   queue = queue.filter((id) => !partners.has(id));
 
   while (queue.length >= 2) {
     const a = queue.shift();
     const b = queue.shift();
 
-    if (!a || !b) continue;
+    if (!a || !b) return;
 
     partners.set(a, b);
     partners.set(b, a);
@@ -34,7 +36,7 @@ function tryMatch(io) {
     io.to(a).emit("matched", { partnerId: b, initiator: true });
     io.to(b).emit("matched", { partnerId: a, initiator: false });
 
-    console.log("MATCH:", a, b);
+    console.log("🔥 MATCH:", a, b);
   }
 }
 
@@ -42,29 +44,18 @@ io.on("connection", (socket) => {
   console.log("CONNECT:", socket.id);
 
   socket.on("login", ({ email }) => {
-    socket.email = email;
     users.set(socket.id, email);
-
-    console.log("LOGIN:", email);
   });
 
   socket.on("ready", () => {
     if (partners.has(socket.id)) return;
 
-    if (!queue.includes(socket.id)) {
-      queue.push(socket.id);
-    }
+    removeFromQueue(socket.id);
+    queue.push(socket.id);
 
-    console.log("READY:", socket.id);
+    console.log("READY:", socket.id, "QUEUE:", queue.length);
 
-    tryMatch(io);
-  });
-
-  socket.on("signal", ({ to, data }) => {
-    io.to(to).emit("signal", {
-      from: socket.id,
-      data,
-    });
+    tryMatch();
   });
 
   socket.on("next", () => {
@@ -75,32 +66,32 @@ io.on("connection", (socket) => {
 
     if (partner) {
       partners.delete(partner);
-      io.to(partner).emit("partner-disconnected");
       removeFromQueue(partner);
 
+      io.to(partner).emit("partner-disconnected");
       queue.push(partner);
     }
 
     queue.push(socket.id);
-
-    tryMatch(io);
+    tryMatch();
   });
 
   socket.on("disconnect", () => {
     const partner = partners.get(socket.id);
 
-    removeFromQueue(socket.id);
     partners.delete(socket.id);
+    removeFromQueue(socket.id);
     users.delete(socket.id);
 
     if (partner) {
       partners.delete(partner);
-      io.to(partner).emit("partner-disconnected");
       removeFromQueue(partner);
+
+      io.to(partner).emit("partner-disconnected");
       queue.push(partner);
     }
 
-    tryMatch(io);
+    tryMatch();
   });
 });
 
