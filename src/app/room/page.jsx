@@ -10,69 +10,82 @@ export default function Room() {
 
   const myVideo = useRef(null);
   const userVideo = useRef(null);
-
   const socketRef = useRef(null);
   const peerRef = useRef(null);
   const streamRef = useRef(null);
 
-useEffect(() => {
-  if (!session?.user?.email) return;
+  useEffect(() => {
+    if (!session?.user?.email) return;
 
-  const socket = io("https://hello-call-socket-production.up.railway.app", {
-    transports: ["websocket"],
-  });
-
-  socketRef.current = socket;
-
-const start = async () => {
-  const stream = await navigator.mediaDevices.getUserMedia({
-    video: true,
-    audio: true,
-  });
-
-  o.current = stream;
-  r.current.srcObject = stream;
-
-  l.emit("login", { email: e.user.email });
-
-  // ✔ CHỈ READY SAU KHI STREAM OK
-  setTimeout(() => {
-    l.emit("ready");
-  }, 300);
-
-  l.on("matched", ({ partnerId, initiator }) => {
-    if (i.current) i.current.destroy();
-
-    const peer = new Peer({
-      initiator,
-      trickle: false,
-      stream,
+    const socket = io("https://hello-call-socket-production.up.railway.app", {
+      transports: ["websocket"],
     });
 
-    peer.on("signal", (data) => {
-      l.emit("signal", { to: partnerId, data });
-    });
+    socketRef.current = socket;
 
-    peer.on("stream", (remote) => {
-      t.current.srcObject = remote;
-    });
+    const start = async () => {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: true,
+        audio: true,
+      });
 
-    i.current = peer;
-  });
-};
+      streamRef.current = stream;
+      myVideo.current.srcObject = stream;
 
-  start();
+      socket.emit("login", { email: session.user.email });
+      socket.emit("ready");
 
-  return () => socket.disconnect();
-}, [session]);
+      socket.on("matched", ({ partnerId, initiator }) => {
+        if (peerRef.current) peerRef.current.destroy();
+
+        const peer = new Peer({
+          initiator,
+          trickle: false,
+          stream,
+        });
+
+        peer.on("signal", (data) => {
+          socket.emit("signal", {
+            to: partnerId,
+            data,
+          });
+        });
+
+        peer.on("stream", (remoteStream) => {
+          userVideo.current.srcObject = remoteStream;
+        });
+
+        peerRef.current = peer;
+      });
+
+      socket.on("signal", ({ data }) => {
+        peerRef.current?.signal(data);
+      });
+
+      socket.on("partner-disconnected", () => {
+        peerRef.current?.destroy();
+        peerRef.current = null;
+        userVideo.current.srcObject = null;
+
+        socket.emit("ready");
+      });
+    };
+
+    start();
+
+    return () => {
+      socket.disconnect();
+      peerRef.current?.destroy();
+      streamRef.current?.getTracks().forEach((t) => t.stop());
+    };
+  }, [session]);
+
   const next = () => {
     peerRef.current?.destroy();
     peerRef.current = null;
     userVideo.current.srcObject = null;
 
     socketRef.current.emit("next");
-
-    // quay lại queue
     socketRef.current.emit("ready");
   };
 
@@ -83,7 +96,7 @@ const start = async () => {
         <video ref={userVideo} autoPlay playsInline className="w-[300px]" />
       </div>
 
-      <button onClick={next} className="bg-white text-black px-4 py-2 rounded">
+      <button onClick={next} className="bg-white px-4 py-2 rounded">
         Next
       </button>
     </div>
