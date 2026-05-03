@@ -3,8 +3,11 @@
 import { useEffect, useRef } from "react";
 import Peer from "simple-peer";
 import { io } from "socket.io-client";
+import { useSession } from "next-auth/react";
 
 export default function Room() {
+  const { data: session } = useSession();
+
   const myVideo = useRef(null);
   const userVideo = useRef(null);
 
@@ -13,6 +16,8 @@ export default function Room() {
   const streamRef = useRef(null);
 
   useEffect(() => {
+    if (!session?.user?.email) return;
+
     const socket = io("https://hello-call-socket-production.up.railway.app", {
       transports: ["websocket"],
     });
@@ -26,14 +31,11 @@ export default function Room() {
       });
 
       streamRef.current = stream;
-
       myVideo.current.srcObject = stream;
 
-     socket.emit("login", {
-  email: session?.user?.email
-});
-
-socket.emit("ready");
+      // 🔥 QUAN TRỌNG: login + ready
+      socket.emit("login", { email: session.user.email });
+      socket.emit("ready");
 
       socket.on("matched", ({ partnerId, initiator }) => {
         if (peerRef.current) peerRef.current.destroy();
@@ -45,10 +47,7 @@ socket.emit("ready");
         });
 
         peer.on("signal", (data) => {
-          socket.emit("signal", {
-            to: partnerId,
-            data,
-          });
+          socket.emit("signal", { to: partnerId, data });
         });
 
         peer.on("stream", (remoteStream) => {
@@ -66,6 +65,9 @@ socket.emit("ready");
         peerRef.current?.destroy();
         peerRef.current = null;
         userVideo.current.srcObject = null;
+
+        // 🔥 auto quay lại queue
+        socket.emit("ready");
       });
     };
 
@@ -76,7 +78,7 @@ socket.emit("ready");
       peerRef.current?.destroy();
       streamRef.current?.getTracks().forEach((t) => t.stop());
     };
-  }, []);
+  }, [session]);
 
   const next = () => {
     peerRef.current?.destroy();
@@ -84,6 +86,9 @@ socket.emit("ready");
     userVideo.current.srcObject = null;
 
     socketRef.current.emit("next");
+
+    // quay lại queue
+    socketRef.current.emit("ready");
   };
 
   return (
