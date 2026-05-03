@@ -83,8 +83,9 @@ io.on("connection", (socket) => {
 
     partners.delete(socket.id);
 
-    readyQueue.push(socket.id);
-
+if (!readyQueue.includes(socket.id)) {
+  readyQueue.push(socket.id);
+}
     if (partner) {
       partners.delete(partner);
       io.to(partner).emit("partner-disconnected");
