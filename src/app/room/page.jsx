@@ -7,70 +7,118 @@ import { getSocket } from "../socket";
 export default function Room() {
   const myVideo = useRef(null);
   const userVideo = useRef(null);
+
   const peerRef = useRef(null);
   const streamRef = useRef(null);
 
   const socket = getSocket();
 
   useEffect(() => {
-    let stream;
+    let mounted = true;
 
     const start = async () => {
-      stream = await navigator.mediaDevices.getUserMedia({
-        video: true,
-        audio: true,
-      });
-
-      streamRef.current = stream;
-      myVideo.current.srcObject = stream;
-
-      if (!socket.connected) socket.connect();
-
-      socket.emit("join");
-
-      socket.on("matched", ({ partnerId, initiator }) => {
-        if (peerRef.current) peerRef.current.destroy();
-
-        const peer = new Peer({
-          initiator,
-          trickle: false,
-          stream,
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: true,
+          audio: true,
         });
 
-        peer.on("signal", (data) => {
-          socket.emit("signal", { to: partnerId, data });
+        if (!mounted) return;
+
+        streamRef.current = stream;
+
+        if (myVideo.current) {
+          myVideo.current.srcObject = stream;
+        }
+
+        if (!socket.connected) {
+          socket.connect();
+        }
+
+        socket.emit("join");
+
+        socket.on("matched", ({ partnerId, initiator }) => {
+          if (peerRef.current) {
+            peerRef.current.destroy();
+          }
+
+          const peer = new Peer({
+            initiator,
+            trickle: false,
+            stream,
+          });
+
+          peer.on("signal", (data) => {
+            socket.emit("signal", {
+              to: partnerId,
+              data,
+            });
+          });
+
+          peer.on("stream", (remoteStream) => {
+            if (userVideo.current) {
+              userVideo.current.srcObject = remoteStream;
+            }
+          });
+
+          peer.on("close", () => {
+            peer.destroy();
+          });
+
+          peer.on("error", (err) => {
+            console.log(err);
+          });
+
+          peerRef.current = peer;
         });
 
-        peer.on("stream", (remote) => {
-          userVideo.current.srcObject = remote;
+        socket.on("signal", ({ data }) => {
+          if (peerRef.current) {
+            peerRef.current.signal(data);
+          }
         });
 
-        peerRef.current = peer;
-      });
+        socket.on("partner-disconnected", () => {
+          if (peerRef.current) {
+            peerRef.current.destroy();
+            peerRef.current = null;
+          }
 
-      socket.on("signal", ({ data }) => {
-        peerRef.current?.signal(data);
-      });
-
-      socket.on("partner-disconnected", () => {
-        peerRef.current?.destroy();
-        peerRef.current = null;
-        userVideo.current.srcObject = null;
-      });
+          if (userVideo.current) {
+            userVideo.current.srcObject = null;
+          }
+        });
+      } catch (err) {
+        console.log(err);
+      }
     };
 
     start();
 
     return () => {
-      socket.emit("next");
-      socket.off();
+      mounted = false;
+
+      socket.off("matched");
+      socket.off("signal");
+      socket.off("partner-disconnected");
+
+      peerRef.current?.destroy();
+
+      streamRef.current?.getTracks().forEach((track) => {
+        track.stop();
+      });
     };
   }, []);
 
   const next = () => {
-    peerRef.current?.destroy();
-    peerRef.current = null;
-    userVideo.current.srcObject = null;
+    if (peerRef.current) {
+      peerRef.current.destroy();
+      peerRef.current = null;
+    }
+
+    if (userVideo.current) {
+      userVideo.current.srcObject = null;
+    }
 
     socket.emit("next");
   };
@@ -78,11 +126,26 @@ export default function Room() {
   return (
     <div className="h-screen bg-black flex flex-col items-center justify-center gap-5">
       <div className="flex gap-5">
-        <video ref={myVideo} autoPlay muted className="w-[300px]" />
-        <video ref={userVideo} autoPlay className="w-[300px]" />
+        <video
+          ref={myVideo}
+          autoPlay
+          muted
+          playsInline
+          className="w-[300px]"
+        />
+
+        <video
+          ref={userVideo}
+          autoPlay
+          playsInline
+          className="w-[300px]"
+        />
       </div>
 
-      <button onClick={next} className="bg-white px-4 py-2">
+      <button
+        onClick={next}
+        className="bg-white text-black px-4 py-2 rounded"
+      >
         Next
       </button>
     </div>
