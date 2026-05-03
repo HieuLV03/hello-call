@@ -12,7 +12,8 @@ const io = new Server(server, {
   cors: { origin: "*" },
 });
 
-const queue = new Set(); // 🔥 dùng Set chống duplicate
+let queue = new Set(); // FIX: dùng Set tránh duplicate
+let partners = new Map(); // socketId -> partnerId
 
 function matchUsers() {
   const users = Array.from(queue);
@@ -23,6 +24,9 @@ function matchUsers() {
 
     queue.delete(a);
     queue.delete(b);
+
+    partners.set(a, b);
+    partners.set(b, a);
 
     io.to(a).emit("matched", {
       partnerId: b,
@@ -39,15 +43,14 @@ function matchUsers() {
 }
 
 io.on("connection", (socket) => {
-  console.log("CONNECT:", socket.id);
-
-  socket.partner = null;
+  console.log("CONNECTED:", socket.id);
 
   socket.on("join", () => {
-    if (!queue.has(socket.id)) {
-      queue.add(socket.id);
-    }
+    console.log("JOIN:", socket.id);
 
+    if (partners.has(socket.id)) return;
+
+    queue.add(socket.id);
     matchUsers();
   });
 
@@ -59,28 +62,37 @@ io.on("connection", (socket) => {
   });
 
   socket.on("next", () => {
-    queue.delete(socket.id);
+    console.log("NEXT:", socket.id);
 
-    if (socket.partner) {
-      io.to(socket.partner).emit("partner-disconnected");
+    const partner = partners.get(socket.id);
+
+    partners.delete(socket.id);
+
+    if (partner) {
+      partners.delete(partner);
+      io.to(partner).emit("partner-disconnected");
     }
 
-    socket.partner = null;
-
     queue.add(socket.id);
-
     matchUsers();
   });
 
   socket.on("disconnect", () => {
+    console.log("DISCONNECT:", socket.id);
+
     queue.delete(socket.id);
 
-    if (socket.partner) {
-      io.to(socket.partner).emit("partner-disconnected");
+    const partner = partners.get(socket.id);
+
+    if (partner) {
+      partners.delete(partner);
+      io.to(partner).emit("partner-disconnected");
     }
+
+    partners.delete(socket.id);
   });
 });
 
 server.listen(3001, () => {
-  console.log("Server running");
+  console.log("Server running 3001");
 });

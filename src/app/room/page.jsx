@@ -2,18 +2,23 @@
 
 import { useEffect, useRef } from "react";
 import Peer from "simple-peer";
-import { getSocket } from "../socket";
+import { io } from "socket.io-client";
 
 export default function Room() {
   const myVideo = useRef(null);
   const userVideo = useRef(null);
 
+  const socketRef = useRef(null);
   const peerRef = useRef(null);
   const streamRef = useRef(null);
-  const socketRef = useRef(null);
 
   useEffect(() => {
-    const socket = getSocket();
+    let mounted = true;
+
+    const socket = io("https://hello-call-socket-production.up.railway.app", {
+      transports: ["websocket"],
+    });
+
     socketRef.current = socket;
 
     const start = async () => {
@@ -28,19 +33,10 @@ export default function Room() {
         myVideo.current.srcObject = stream;
       }
 
-      if (!socket.connected) socket.connect();
-
       socket.emit("join");
 
-      socket.off("matched");
-      socket.off("signal");
-      socket.off("partner-disconnected");
-
       socket.on("matched", ({ partnerId, initiator }) => {
-        if (peerRef.current) {
-          peerRef.current.destroy();
-          peerRef.current = null;
-        }
+        if (peerRef.current) peerRef.current.destroy();
 
         const peer = new Peer({
           initiator,
@@ -81,9 +77,9 @@ export default function Room() {
     start();
 
     return () => {
-      socket.off("matched");
-      socket.off("signal");
-      socket.off("partner-disconnected");
+      mounted = false;
+
+      socket.disconnect();
 
       peerRef.current?.destroy();
       streamRef.current?.getTracks().forEach((t) => t.stop());
@@ -91,9 +87,6 @@ export default function Room() {
   }, []);
 
   const next = () => {
-    const socket = socketRef.current;
-    if (!socket) return;
-
     peerRef.current?.destroy();
     peerRef.current = null;
 
@@ -101,7 +94,7 @@ export default function Room() {
       userVideo.current.srcObject = null;
     }
 
-    socket.emit("next");
+    socketRef.current.emit("next");
   };
 
   return (
@@ -111,7 +104,10 @@ export default function Room() {
         <video ref={userVideo} autoPlay playsInline className="w-[300px]" />
       </div>
 
-      <button onClick={next} className="bg-white text-black px-4 py-2 rounded">
+      <button
+        onClick={next}
+        className="bg-white text-black px-4 py-2 rounded"
+      >
         Next
       </button>
     </div>
