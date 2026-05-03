@@ -12,47 +12,40 @@ const io = new Server(server, {
   cors: { origin: "*" },
 });
 
-let queue = new Map(); // dùng Map cho sạch hơn
-
-function removeFromQueue(id) {
-  queue.delete(id);
-}
+const queue = new Set(); // 🔥 dùng Set chống duplicate
 
 function matchUsers() {
-  const users = Array.from(queue.values());
+  const users = Array.from(queue);
 
   while (users.length >= 2) {
     const a = users.shift();
     const b = users.shift();
 
-    queue.delete(a.id);
-    queue.delete(b.id);
+    queue.delete(a);
+    queue.delete(b);
 
-    a.partner = b.id;
-    b.partner = a.id;
-
-    io.to(a.id).emit("matched", {
-      partnerId: b.id,
+    io.to(a).emit("matched", {
+      partnerId: b,
       initiator: true,
     });
 
-    io.to(b.id).emit("matched", {
-      partnerId: a.id,
+    io.to(b).emit("matched", {
+      partnerId: a,
       initiator: false,
     });
 
-    console.log("MATCH:", a.id, b.id);
+    console.log("MATCH:", a, b);
   }
 }
 
 io.on("connection", (socket) => {
-  console.log("CONNECTED:", socket.id);
+  console.log("CONNECT:", socket.id);
 
   socket.partner = null;
 
   socket.on("join", () => {
     if (!queue.has(socket.id)) {
-      queue.set(socket.id, { id: socket.id, socket });
+      queue.add(socket.id);
     }
 
     matchUsers();
@@ -66,9 +59,7 @@ io.on("connection", (socket) => {
   });
 
   socket.on("next", () => {
-    console.log("NEXT:", socket.id);
-
-    removeFromQueue(socket.id);
+    queue.delete(socket.id);
 
     if (socket.partner) {
       io.to(socket.partner).emit("partner-disconnected");
@@ -76,15 +67,13 @@ io.on("connection", (socket) => {
 
     socket.partner = null;
 
-    queue.set(socket.id, { id: socket.id, socket });
+    queue.add(socket.id);
 
     matchUsers();
   });
 
   socket.on("disconnect", () => {
-    console.log("DISCONNECT:", socket.id);
-
-    removeFromQueue(socket.id);
+    queue.delete(socket.id);
 
     if (socket.partner) {
       io.to(socket.partner).emit("partner-disconnected");
@@ -93,5 +82,5 @@ io.on("connection", (socket) => {
 });
 
 server.listen(3001, () => {
-  console.log("Server running on 3001");
+  console.log("Server running");
 });
