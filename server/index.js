@@ -32,9 +32,14 @@ io.on("connection", (socket) => {
   });
 
   socket.on("ready", () => {
-    if (!queue.includes(socket.id) && !partners.has(socket.id)) {
+    // ❌ chống spam queue
+    if (partners.has(socket.id)) return;
+
+    if (!queue.includes(socket.id)) {
       queue.push(socket.id);
     }
+
+    console.log("QUEUE:", queue);
 
     tryMatch(io);
   });
@@ -44,13 +49,14 @@ io.on("connection", (socket) => {
 
     partners.delete(socket.id);
 
+    queue.push(socket.id);
+
     if (partner) {
       partners.delete(partner);
       io.to(partner).emit("partner-disconnected");
+
       queue.push(partner);
     }
-
-    queue.push(socket.id);
 
     tryMatch(io);
   });
