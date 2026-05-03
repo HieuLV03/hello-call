@@ -19,94 +19,97 @@ export default function Room() {
 
     const socket = io("https://hello-call-socket-production.up.railway.app", {
       transports: ["websocket"],
-      reconnection: true,
     });
 
     socketRef.current = socket;
 
-    // === GẮN TẤT CẢ LISTENERS NGAY TỪ ĐẦU ===
-    socket.on("connect", () => {
-      console.log("Socket connected:", socket.id);
-      socket.emit("login", { email: session.user.email });
-      socket.emit("ready");        // Không cần setTimeout
-    });
-
-    socket.on("matched", ({ partnerId, initiator }) => {
-      console.log("✅ MATCHED with", partnerId, "| Initiator:", initiator);
-      
-      if (peerRef.current) peerRef.current.destroy();
-
-      const peer = new Peer({
-        initiator,
-        trickle: false,
-        stream: streamRef.current,
+    const start = async () => {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: true,
+        audio: true,
       });
 
-      peer.on("signal", (data) => {
-        socket.emit("signal", { to: partnerId, data });
+      streamRef.current = stream;
+      myVideo.current.srcObject = stream;
+
+      // LOGIN + READY (QUAN TRỌNG)
+      socket.on("connect", () => {
+        socket.emit("login", { email: session.user.email });
+        socket.emit("ready");
       });
 
-      peer.on("stream", (remoteStream) => {
-        userVideo.current.srcObject = remoteStream;
-      });
+      // MATCHED
+      socket.on("matched", ({ partnerId, initiator }) => {
+        console.log("MATCHED:", partnerId);
 
-      peerRef.current = peer;
-    });
+        if (peerRef.current) peerRef.current.destroy();
 
-    socket.on("signal", ({ data }) => {
-      peerRef.current?.signal(data);
-    });
-
-    socket.on("partner-disconnected", () => {
-      console.log("Partner disconnected");
-      peerRef.current?.destroy();
-      peerRef.current = null;
-      if (userVideo.current) userVideo.current.srcObject = null;
-      
-      socket.emit("ready");   // Quan trọng
-    });
-
-    // === LẤY STREAM ===
-    const startStream = async () => {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: true,
-          audio: true,
+        const peer = new Peer({
+          initiator,
+          trickle: false,
+          stream,
         });
-        streamRef.current = stream;
-        if (myVideo.current) myVideo.current.srcObject = stream;
-      } catch (err) {
-        console.error("Get media error:", err);
-      }
+
+        peer.on("signal", (data) => {
+          socket.emit("signal", {
+            to: partnerId,
+            data,
+          });
+        });
+
+        peer.on("stream", (remoteStream) => {
+          userVideo.current.srcObject = remoteStream;
+        });
+
+        peerRef.current = peer;
+      });
+
+      // SIGNAL
+      socket.on("signal", ({ data }) => {
+        peerRef.current?.signal(data);
+      });
+
+      // DISCONNECT PARTNER
+      socket.on("partner-disconnected", () => {
+        console.log("Partner left");
+
+        peerRef.current?.destroy();
+        peerRef.current = null;
+
+        userVideo.current.srcObject = null;
+
+        // tự quay lại queue
+        socket.emit("ready");
+      });
     };
 
-    startStream();
+    start();
 
     return () => {
-      socket.disconnect();
+      socketRef.current?.disconnect();
       peerRef.current?.destroy();
-      streamRef.current?.getTracks().forEach((t) => t.stop());
+      streamRef.current?.getTracks().forEach(t => t.stop());
     };
   }, [session]);
 
   const next = () => {
     peerRef.current?.destroy();
     peerRef.current = null;
-    if (userVideo.current) userVideo.current.srcObject = null;
+    userVideo.current.srcObject = null;
 
-    socketRef.current?.emit("next");
+    socketRef.current.emit("next");
   };
 
   return (
     <div className="h-screen bg-black flex flex-col items-center justify-center gap-5">
       <div className="flex gap-5">
-        <video ref={myVideo} autoPlay muted playsInline className="w-[300px] rounded" />
-        <video ref={userVideo} autoPlay playsInline className="w-[300px] rounded" />
+        <video ref={myVideo} autoPlay muted playsInline className="w-[300px]" />
+        <video ref={userVideo} autoPlay playsInline className="w-[300px]" />
       </div>
 
-      <button 
-        onClick={next} 
-        className="bg-red-500 hover:bg-red-600 text-white px-6 py-3 rounded-lg font-medium"
+      <button
+        onClick={next}
+        className="bg-red-500 text-white px-6 py-3 rounded"
       >
         Next
       </button>
