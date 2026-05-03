@@ -11,79 +11,109 @@ export default function Room() {
   const peerRef = useRef(null);
   const streamRef = useRef(null);
 
-  const socket = getSocket();
+  const socketRef = useRef(null);
+  const hasJoined = useRef(false);
 
-useEffect(() => {
-  let mounted = true;
+  useEffect(() => {
+    const socket = getSocket();
+    socketRef.current = socket;
 
-  const socket = getSocket();
-
-  const start = async () => {
-    const stream = await navigator.mediaDevices.getUserMedia({
-      video: true,
-      audio: true,
-    });
-
-    streamRef.current = stream;
-    myVideo.current.srcObject = stream;
-
-    if (!socket.connected) socket.connect();
-
-    socket.emit("join");
-
-    socket.off("matched");
-    socket.off("signal");
-    socket.off("partner-disconnected");
-
-    socket.on("matched", ({ partnerId, initiator }) => {
-      if (peerRef.current) peerRef.current.destroy();
-
-      const peer = new Peer({
-        initiator,
-        trickle: false,
-        stream,
-      });
-
-      peer.on("signal", (data) => {
-        socket.emit("signal", {
-          to: partnerId,
-          data,
+    const start = async () => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: true,
+          audio: true,
         });
-      });
 
-      peer.on("stream", (remoteStream) => {
-        userVideo.current.srcObject = remoteStream;
-      });
+        streamRef.current = stream;
 
-      peerRef.current = peer;
-    });
+        if (myVideo.current) {
+          myVideo.current.srcObject = stream;
+        }
 
-    socket.on("signal", ({ data }) => {
-      peerRef.current?.signal(data);
-    });
+        // ⚠️ CHỈ CONNECT 1 LẦN
+        if (!socket.connected) {
+          socket.connect();
+        }
 
-    socket.on("partner-disconnected", () => {
+        // ⚠️ CHỈ JOIN 1 LẦN
+        if (!hasJoined.current) {
+          socket.emit("join");
+          hasJoined.current = true;
+        }
+
+        // cleanup listeners trước khi add lại
+        socket.off("matched");
+        socket.off("signal");
+        socket.off("partner-disconnected");
+
+        socket.on("matched", ({ partnerId, initiator }) => {
+          console.log("MATCHED:", partnerId);
+
+          if (peerRef.current) {
+            peerRef.current.destroy();
+          }
+
+          const peer = new Peer({
+            initiator,
+            trickle: false,
+            stream,
+          });
+
+          peer.on("signal", (data) => {
+            socket.emit("signal", {
+              to: partnerId,
+              data,
+            });
+          });
+
+          peer.on("stream", (remoteStream) => {
+            if (userVideo.current) {
+              userVideo.current.srcObject = remoteStream;
+            }
+          });
+
+          peer.on("error", (err) => {
+            console.log("peer error:", err);
+          });
+
+          peerRef.current = peer;
+        });
+
+        socket.on("signal", ({ data }) => {
+          peerRef.current?.signal(data);
+        });
+
+        socket.on("partner-disconnected", () => {
+          console.log("partner left");
+
+          peerRef.current?.destroy();
+          peerRef.current = null;
+
+          if (userVideo.current) {
+            userVideo.current.srcObject = null;
+          }
+        });
+      } catch (err) {
+        console.log("camera error:", err);
+      }
+    };
+
+    start();
+
+    return () => {
+      socket.off("matched");
+      socket.off("signal");
+      socket.off("partner-disconnected");
+
       peerRef.current?.destroy();
-      peerRef.current = null;
-      userVideo.current.srcObject = null;
-    });
-  };
-
-  start();
-
-  return () => {
-    mounted = false;
-
-    socket.off("matched");
-    socket.off("signal");
-    socket.off("partner-disconnected");
-
-    peerRef.current?.destroy();
-    streamRef.current?.getTracks().forEach(t => t.stop());
-  };
-}, []);
+      streamRef.current?.getTracks().forEach((t) => t.stop());
+    };
+  }, []);
 
   const next = () => {
+    const socket = socketRef.current;
+
     if (peerRef.current) {
       peerRef.current.destroy();
       peerRef.current = null;
@@ -94,25 +124,17 @@ useEffect(() => {
     }
 
     socket.emit("next");
+
+    // join lại queue
+    socket.emit("join");
   };
 
   return (
     <div className="h-screen bg-black flex flex-col items-center justify-center gap-5">
       <div className="flex gap-5">
-        <video
-          ref={myVideo}
-          autoPlay
-          muted
-          playsInline
-          className="w-[300px]"
-        />
+        <video ref={myVideo} autoPlay muted playsInline className="w-[300px]" />
 
-        <video
-          ref={userVideo}
-          autoPlay
-          playsInline
-          className="w-[300px]"
-        />
+        <video ref={userVideo} autoPlay playsInline className="w-[300px]" />
       </div>
 
       <button
