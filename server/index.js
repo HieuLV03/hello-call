@@ -12,15 +12,15 @@ const io = new Server(server, {
   cors: { origin: "*" },
 });
 
-let queue = []; // ready users
-let partners = new Map(); // socketId -> partnerId
+let queue = [];
+let partners = new Map();
+let users = new Map(); // email tracking
 
 function removeFromQueue(id) {
   queue = queue.filter((x) => x !== id);
 }
 
 function tryMatch() {
-  // lọc người đang không còn valid
   queue = queue.filter((id) => !partners.has(id));
 
   while (queue.length >= 2) {
@@ -49,7 +49,12 @@ function tryMatch() {
 io.on("connection", (socket) => {
   console.log("CONNECT:", socket.id);
 
-  // vào queue khi ready
+  // 🔥 FIX: login phải có
+  socket.on("login", ({ email }) => {
+    users.set(socket.id, { email });
+    console.log("LOGIN:", email);
+  });
+
   socket.on("ready", () => {
     if (partners.has(socket.id)) return;
 
@@ -57,7 +62,7 @@ io.on("connection", (socket) => {
       queue.push(socket.id);
     }
 
-    console.log("READY:", socket.id, "QUEUE:", queue.length);
+    console.log("READY:", socket.id);
 
     tryMatch();
   });
@@ -69,7 +74,6 @@ io.on("connection", (socket) => {
     });
   });
 
-  // NEXT = bỏ partner + quay lại queue
   socket.on("next", () => {
     const partner = partners.get(socket.id);
 
@@ -78,10 +82,9 @@ io.on("connection", (socket) => {
 
     if (partner) {
       partners.delete(partner);
-
       io.to(partner).emit("partner-disconnected");
-
       removeFromQueue(partner);
+
       queue.push(partner);
     }
 
@@ -91,17 +94,17 @@ io.on("connection", (socket) => {
   });
 
   socket.on("disconnect", () => {
-    console.log("DISCONNECT:", socket.id);
-
     const partner = partners.get(socket.id);
 
     removeFromQueue(socket.id);
     partners.delete(socket.id);
+    users.delete(socket.id);
 
     if (partner) {
       partners.delete(partner);
       io.to(partner).emit("partner-disconnected");
       removeFromQueue(partner);
+
       queue.push(partner);
     }
 
