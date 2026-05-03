@@ -1,15 +1,22 @@
-import NextAuth from "next-auth";
-import GoogleProvider from "next-auth/providers/google";
+let queue = [];
+let partners = new Map();
 
-const handler = NextAuth({
-  providers: [
-    GoogleProvider({
-      clientId: process.env.GOOGLE_CLIENT_ID,
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-    }),
-  ],
+const matchUsers = (io) => {
+  while (queue.length >= 2) {
+    const aId = queue.shift();
+    const bId = queue.shift();
 
-  secret: process.env.NEXTAUTH_SECRET,
-});
+    const a = io.sockets.sockets.get(aId);
+    const b = io.sockets.sockets.get(bId);
 
-export { handler as GET, handler as POST };
+    if (!a || !b) continue;
+
+    partners.set(aId, bId);
+    partners.set(bId, aId);
+
+    a.emit("matched", { partnerId: bId, initiator: true });
+    b.emit("matched", { partnerId: aId, initiator: false });
+
+    console.log("MATCH:", aId, bId);
+  }
+};
