@@ -71,7 +71,7 @@ export default function Room() {
         peerRef.current?.destroy();
         peerRef.current = null;
         userVideo.current.srcObject = null;
-
+socketRef.current?.emit("ready");
       });
     };
 

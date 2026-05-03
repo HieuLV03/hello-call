@@ -8,13 +8,16 @@ function removeFromQueue(id) {
 }
 
 function tryMatch(io) {
-  queue = queue.filter((id) => readySet.has(id) && !partners.has(id));
+  // Lọc sạch queue
+  queue = queue.filter((id) => 
+    readySet.has(id) && !partners.has(id)
+  );
 
   while (queue.length >= 2) {
     const a = queue.shift();
     const b = queue.shift();
 
-    if (!a || !b) return;
+    if (!a || !b || a === b) continue;
 
     readySet.delete(a);
     readySet.delete(b);
@@ -28,7 +31,6 @@ function tryMatch(io) {
     console.log("🔥 MATCH:", a, b);
   }
 }
-
 io.on("connection", (socket) => {
   console.log("CONNECT:", socket.id);
 
@@ -36,18 +38,18 @@ io.on("connection", (socket) => {
     users.set(socket.id, email);
   });
 
-  socket.on("ready", () => {
-    if (partners.has(socket.id)) return;
+socket.on("ready", () => {
+  if (partners.has(socket.id)) return;
 
-    readySet.add(socket.id);
+  // Xóa sạch dấu vết cũ
+  readySet.add(socket.id);
+  removeFromQueue(socket.id);
+  queue.push(socket.id);
 
-    removeFromQueue(socket.id);
-    queue.push(socket.id);
+  console.log("READY:", socket.id, "| Queue:", queue.length);
 
-    console.log("READY:", socket.id, "QUEUE:", queue.length);
-
-    tryMatch(io);
-  });
+  tryMatch(io);
+});
 
   socket.on("next", () => {
     const partner = partners.get(socket.id);
