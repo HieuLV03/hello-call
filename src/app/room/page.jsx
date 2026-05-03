@@ -4,7 +4,7 @@ import { useEffect, useRef } from "react";
 import Peer from "simple-peer";
 import { getSocket } from "../socket";
 
-export default function page() {
+export default function Room() {
   const myVideo = useRef(null);
   const userVideo = useRef(null);
 
