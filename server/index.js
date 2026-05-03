@@ -35,6 +35,8 @@ const matchUsers = () => {
       partnerId: a.id,
       initiator: false,
     });
+
+    console.log("MATCH:", a.id, b.id);
   }
 };
 
@@ -43,15 +45,17 @@ io.on("connection", (socket) => {
 
   socket.partner = null;
 
-  socket.on("join", () => {
-    const exists = queue.find((s) => s.id === socket.id);
+socket.on("join", () => {
+  console.log("JOIN:", socket.id);
 
-    if (!exists) {
-      queue.push(socket);
-    }
+  const exists = queue.some((s) => s.id === socket.id);
 
-    matchUsers();
-  });
+  if (!exists) {
+    queue.push({ id: socket.id });
+  }
+
+  matchUsers();
+});
 
   socket.on("signal", ({ to, data }) => {
     io.to(to).emit("signal", {
@@ -60,29 +64,31 @@ io.on("connection", (socket) => {
     });
   });
 
-  socket.on("next", () => {
-    if (socket.partner) {
-      io.to(socket.partner).emit("partner-disconnected");
-    }
+socket.on("next", () => {
+  console.log("NEXT:", socket.id);
 
-    socket.partner = null;
+  queue = queue.filter((s) => s.id !== socket.id);
 
-    queue = queue.filter((s) => s.id !== socket.id);
+  if (socket.partner) {
+    io.to(socket.partner).emit("partner-disconnected");
+  }
 
-    queue.push(socket);
+  socket.partner = null;
 
-    matchUsers();
-  });
+  queue.push({ id: socket.id });
 
-  socket.on("disconnect", () => {
-    console.log("disconnect:", socket.id);
+  matchUsers();
+});
 
-    queue = queue.filter((s) => s.id !== socket.id);
+socket.on("disconnect", () => {
+  console.log("DISCONNECT:", socket.id);
 
-    if (socket.partner) {
-      io.to(socket.partner).emit("partner-disconnected");
-    }
-  });
+  queue = queue.filter((s) => s.id !== socket.id);
+
+  if (socket.partner) {
+    io.to(socket.partner).emit("partner-disconnected");
+  }
+});
 });
 
 server.listen(3001, () => {
