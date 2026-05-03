@@ -13,8 +13,6 @@ export default function Room() {
   const streamRef = useRef(null);
 
   useEffect(() => {
-    let mounted = true;
-
     const socket = io("https://hello-call-socket-production.up.railway.app", {
       transports: ["websocket"],
     });
@@ -29,11 +27,9 @@ export default function Room() {
 
       streamRef.current = stream;
 
-      if (myVideo.current) {
-        myVideo.current.srcObject = stream;
-      }
+      myVideo.current.srcObject = stream;
 
-n.emit("join", { email: "user" });
+      socket.emit("join");
 
       socket.on("matched", ({ partnerId, initiator }) => {
         if (peerRef.current) peerRef.current.destroy();
@@ -52,9 +48,7 @@ n.emit("join", { email: "user" });
         });
 
         peer.on("stream", (remoteStream) => {
-          if (userVideo.current) {
-            userVideo.current.srcObject = remoteStream;
-          }
+          userVideo.current.srcObject = remoteStream;
         });
 
         peerRef.current = peer;
@@ -67,20 +61,14 @@ n.emit("join", { email: "user" });
       socket.on("partner-disconnected", () => {
         peerRef.current?.destroy();
         peerRef.current = null;
-
-        if (userVideo.current) {
-          userVideo.current.srcObject = null;
-        }
+        userVideo.current.srcObject = null;
       });
     };
 
     start();
 
     return () => {
-      mounted = false;
-
       socket.disconnect();
-
       peerRef.current?.destroy();
       streamRef.current?.getTracks().forEach((t) => t.stop());
     };
@@ -89,10 +77,7 @@ n.emit("join", { email: "user" });
   const next = () => {
     peerRef.current?.destroy();
     peerRef.current = null;
-
-    if (userVideo.current) {
-      userVideo.current.srcObject = null;
-    }
+    userVideo.current.srcObject = null;
 
     socketRef.current.emit("next");
   };
@@ -104,10 +89,7 @@ n.emit("join", { email: "user" });
         <video ref={userVideo} autoPlay playsInline className="w-[300px]" />
       </div>
 
-      <button
-        onClick={next}
-        className="bg-white text-black px-4 py-2 rounded"
-      >
+      <button onClick={next} className="bg-white text-black px-4 py-2 rounded">
         Next
       </button>
     </div>
