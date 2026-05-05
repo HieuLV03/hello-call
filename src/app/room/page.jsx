@@ -13,36 +13,39 @@ export default function Room() {
   const socketRef = useRef(null);
   const peerRef = useRef(null);
   const streamRef = useRef(null);
+useEffect(() => {
+  if (!session?.user?.email) return;
 
-  useEffect(() => {
-    if (!session?.user?.email) return;
-
-    const socket = io("https://hello-call-socket-production.up.railway.app", {
+  const socket = io(
+    "https://hello-call-socket-production.up.railway.app",
+    {
       transports: ["websocket"],
-    });
+    }
+  );
 
-    socketRef.current = socket;
+  socketRef.current = socket;
 
-    const start = async () => {
-      const stream = await navigator.mediaDevices.getUserMedia({
+  let stream;
+
+  const init = async () => {
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
         video: true,
         audio: true,
       });
 
       streamRef.current = stream;
-      myVideo.current.srcObject = stream;
 
-      // LOGIN + READY (QUAN TRỌNG)
-      socket.on("connect", () => {
-        socket.emit("login", { email: session.user.email });
-        socket.emit("ready");
-      });
+      if (myVideo.current) {
+        myVideo.current.srcObject = stream;
+      }
 
-      // MATCHED
+      // ===== LISTENERS TRƯỚC =====
+
       socket.on("matched", ({ partnerId, initiator }) => {
         console.log("MATCHED:", partnerId);
 
-        if (peerRef.current) peerRef.current.destroy();
+        peerRef.current?.destroy();
 
         const peer = new Peer({
           initiator,
@@ -58,40 +61,69 @@ export default function Room() {
         });
 
         peer.on("stream", (remoteStream) => {
-          userVideo.current.srcObject = remoteStream;
+          console.log("REMOTE STREAM");
+
+          if (userVideo.current) {
+            userVideo.current.srcObject = remoteStream;
+          }
+        });
+
+        peer.on("error", (err) => {
+          console.log("PEER ERROR:", err);
+        });
+
+        peer.on("close", () => {
+          console.log("PEER CLOSED");
         });
 
         peerRef.current = peer;
       });
 
-      // SIGNAL
       socket.on("signal", ({ data }) => {
+        console.log("SIGNAL");
+
         peerRef.current?.signal(data);
       });
 
-      // DISCONNECT PARTNER
       socket.on("partner-disconnected", () => {
-        console.log("Partner left");
+        console.log("Partner disconnected");
 
         peerRef.current?.destroy();
         peerRef.current = null;
 
-        userVideo.current.srcObject = null;
+        if (userVideo.current) {
+          userVideo.current.srcObject = null;
+        }
 
-        // tự quay lại queue
         socket.emit("ready");
       });
-    };
 
-    start();
+      // ===== CONNECT SAU CÙNG =====
 
-    return () => {
-      socketRef.current?.disconnect();
-      peerRef.current?.destroy();
-      streamRef.current?.getTracks().forEach(t => t.stop());
-    };
-  }, [session]);
+      socket.on("connect", () => {
+        console.log("CONNECTED:", socket.id);
 
+        socket.emit("login", {
+          email: session.user.email,
+        });
+
+        socket.emit("ready");
+      });
+    } catch (err) {
+      console.log(err);
+    }
+  };
+
+  init();
+
+  return () => {
+    socket.disconnect();
+
+    peerRef.current?.destroy();
+
+    stream?.getTracks().forEach((t) => t.stop());
+  };
+}, [session]);
   const next = () => {
     peerRef.current?.destroy();
     peerRef.current = null;
