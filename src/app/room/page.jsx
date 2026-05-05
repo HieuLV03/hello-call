@@ -18,12 +18,9 @@ export default function Room() {
   useEffect(() => {
     if (!session?.user?.email) return;
 
-    const socket = io(
-      "https://hello-call-socket-production.up.railway.app",
-      {
-        transports: ["websocket"],
-      }
-    );
+const socket = io(
+  "https://hello-call-socket-production.up.railway.app"
+);
 
     socketRef.current = socket;
 
