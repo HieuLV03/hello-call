@@ -4,9 +4,12 @@ import { useEffect, useRef } from "react";
 import Peer from "simple-peer";
 import { io } from "socket.io-client";
 import { useSession } from "next-auth/react";
+import { useRouter } from "next/navigation";
 
 export default function Room() {
   const { data: session } = useSession();
+
+  const router = useRouter();
 
   const myVideo = useRef(null);
   const userVideo = useRef(null);
@@ -18,9 +21,9 @@ export default function Room() {
   useEffect(() => {
     if (!session?.user?.email) return;
 
-const socket = io(
-  "https://hello-call-socket-production.up.railway.app"
-);
+    const socket = io(
+      "https://hello-call-socket-production.up.railway.app"
+    );
 
     socketRef.current = socket;
 
@@ -86,7 +89,10 @@ const socket = io(
             },
           });
 
+          // =========================
           // SEND SIGNAL
+          // =========================
+
           peer.on("signal", (data) => {
             console.log("SEND SIGNAL");
 
@@ -96,26 +102,36 @@ const socket = io(
             });
           });
 
-          // CONNECTED
-     peer.on("connect", () => {
-  console.log("PEER CONNECTED");
-});
+          // =========================
+          // PEER CONNECTED
+          // =========================
 
-// DEBUG ICE
-peer._pc.oniceconnectionstatechange = () => {
-  console.log(
-    "ICE STATE:",
-    peer._pc.iceConnectionState
-  );
-};
+          peer.on("connect", () => {
+            console.log("PEER CONNECTED");
+          });
 
-peer._pc.onconnectionstatechange = () => {
-  console.log(
-    "CONNECTION STATE:",
-    peer._pc.connectionState
-  );
-};
+          // =========================
+          // DEBUG ICE
+          // =========================
+
+          peer._pc.oniceconnectionstatechange = () => {
+            console.log(
+              "ICE STATE:",
+              peer._pc.iceConnectionState
+            );
+          };
+
+          peer._pc.onconnectionstatechange = () => {
+            console.log(
+              "CONNECTION STATE:",
+              peer._pc.connectionState
+            );
+          };
+
+          // =========================
           // REMOTE STREAM
+          // =========================
+
           peer.on("stream", (remoteStream) => {
             console.log("REMOTE STREAM");
 
@@ -128,12 +144,18 @@ peer._pc.onconnectionstatechange = () => {
             }
           });
 
+          // =========================
           // ERROR
+          // =========================
+
           peer.on("error", (err) => {
             console.log("PEER ERROR:", err);
           });
 
+          // =========================
           // CLOSE
+          // =========================
+
           peer.on("close", () => {
             console.log("PEER CLOSED");
           });
@@ -208,6 +230,10 @@ peer._pc.onconnectionstatechange = () => {
     };
   }, [session]);
 
+  // =========================
+  // NEXT
+  // =========================
+
   const next = () => {
     if (peerRef.current) {
       peerRef.current.destroy();
@@ -222,29 +248,37 @@ peer._pc.onconnectionstatechange = () => {
   };
 
   return (
-    <div className="h-screen bg-black flex flex-col items-center justify-center gap-5">
+    <div className="h-screen bg-black flex flex-col items-center justify-center gap-5 relative">
       <div className="flex gap-5">
         <video
           ref={myVideo}
           autoPlay
           muted
           playsInline
-          className="w-[300px]"
+          className="w-[300px] rounded-xl bg-gray-900"
         />
 
         <video
           ref={userVideo}
           autoPlay
           playsInline
-          className="w-[300px]"
+          className="w-[300px] rounded-xl bg-gray-900"
         />
       </div>
 
       <button
         onClick={next}
-        className="bg-red-500 text-white px-6 py-3 rounded"
+        className="bg-red-500 hover:bg-red-600 text-white px-6 py-3 rounded-xl"
       >
         Next
+      </button>
+
+      {/* NÚT TRANG CHỦ */}
+      <button
+        onClick={() => router.push("/")}
+        className="fixed bottom-5 right-5 bg-white text-black px-5 py-3 rounded-full shadow-lg z-50 hover:scale-105 transition"
+      >
+        Trang chủ
       </button>
     </div>
   );
