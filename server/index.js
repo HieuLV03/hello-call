@@ -11,6 +11,7 @@ const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
     origin: "*",
+    methods: ["GET", "POST"],
   },
 });
 
@@ -21,8 +22,6 @@ const io = new Server(server, {
 let queue = [];
 const partners = new Map();
 const readyUsers = new Set();
-
-// 👉 FIX ONLINE USERS (QUAN TRỌNG)
 const onlineSockets = new Set();
 
 // =========================
@@ -32,7 +31,7 @@ const onlineSockets = new Set();
 function emitOnlineUsers() {
   const count = onlineSockets.size;
 
-  console.log("🟢 ONLINE:", count);
+  console.log("🟢 ONLINE USERS:", count);
 
   io.emit("online-users", count);
 }
@@ -47,10 +46,7 @@ function removeFromQueue(id) {
 
 function addToQueue(id) {
   removeFromQueue(id);
-
-  if (!queue.includes(id)) {
-    queue.push(id);
-  }
+  if (!queue.includes(id)) queue.push(id);
 }
 
 // =========================
@@ -61,8 +57,6 @@ function tryMatch() {
   queue = queue.filter(
     (id) => readyUsers.has(id) && !partners.has(id)
   );
-
-  console.log("QUEUE:", queue);
 
   while (queue.length >= 2) {
     const a = queue.shift();
@@ -97,21 +91,21 @@ function tryMatch() {
 io.on("connection", (socket) => {
   console.log("CONNECT:", socket.id);
 
-  // 👉 ADD ONLINE
+  // ADD ONLINE
   onlineSockets.add(socket.id);
-  emitOnlineUsers();
 
-  // =========================
+  // IMPORTANT: delay để client kịp listen
+  setTimeout(() => {
+    emitOnlineUsers();
+  }, 50);
+
   // LOGIN
-  // =========================
   socket.on("login", ({ email }) => {
     socket.email = email;
     console.log("LOGIN:", email);
   });
 
-  // =========================
   // READY
-  // =========================
   socket.on("ready", () => {
     if (partners.has(socket.id)) return;
 
@@ -121,9 +115,7 @@ io.on("connection", (socket) => {
     tryMatch();
   });
 
-  // =========================
-  // SIGNAL (WEBRTC)
-  // =========================
+  // SIGNAL
   socket.on("signal", ({ to, data }) => {
     io.to(to).emit("signal", {
       from: socket.id,
@@ -131,9 +123,7 @@ io.on("connection", (socket) => {
     });
   });
 
-  // =========================
   // NEXT
-  // =========================
   socket.on("next", () => {
     const partner = partners.get(socket.id);
 
@@ -141,7 +131,6 @@ io.on("connection", (socket) => {
 
     if (partner) {
       partners.delete(partner);
-
       io.to(partner).emit("partner-disconnected");
     }
 
@@ -151,15 +140,15 @@ io.on("connection", (socket) => {
     tryMatch();
   });
 
-  // =========================
   // DISCONNECT
-  // =========================
   socket.on("disconnect", () => {
     console.log("DISCONNECT:", socket.id);
 
-    // 👉 REMOVE ONLINE
     onlineSockets.delete(socket.id);
-    emitOnlineUsers();
+
+    setTimeout(() => {
+      emitOnlineUsers();
+    }, 50);
 
     const partner = partners.get(socket.id);
 
@@ -169,7 +158,6 @@ io.on("connection", (socket) => {
 
     if (partner) {
       partners.delete(partner);
-
       io.to(partner).emit("partner-disconnected");
     }
 
@@ -177,10 +165,7 @@ io.on("connection", (socket) => {
   });
 });
 
-// =========================
-// START SERVER
-// =========================
-
+// START
 server.listen(3001, () => {
   console.log("🚀 Server running on 3001");
 });

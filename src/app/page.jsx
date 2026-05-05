@@ -7,23 +7,28 @@ import { io } from "socket.io-client";
 
 export default function Home() {
   const { data: session, status } = useSession();
-
   const router = useRouter();
 
   const [onlineUsers, setOnlineUsers] = useState(0);
 
   useEffect(() => {
     const socket = io(
-      "https://hello-call-socket-production.up.railway.app"
+      "https://hello-call-socket-production.up.railway.app",
+      {
+        transports: ["websocket"],
+      }
     );
 
+    socket.on("connect", () => {
+      console.log("CONNECTED:", socket.id);
+    });
+
     socket.on("online-users", (count) => {
+      console.log("ONLINE:", count);
       setOnlineUsers(count);
     });
 
-    return () => {
-      socket.disconnect();
-    };
+    return () => socket.disconnect();
   }, []);
 
   if (status === "loading") {
