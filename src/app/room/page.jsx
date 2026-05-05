@@ -97,10 +97,24 @@ const socket = io(
           });
 
           // CONNECTED
-          peer.on("connect", () => {
-            console.log("PEER CONNECTED");
-          });
+     peer.on("connect", () => {
+  console.log("PEER CONNECTED");
+});
 
+// DEBUG ICE
+peer._pc.oniceconnectionstatechange = () => {
+  console.log(
+    "ICE STATE:",
+    peer._pc.iceConnectionState
+  );
+};
+
+peer._pc.onconnectionstatechange = () => {
+  console.log(
+    "CONNECTION STATE:",
+    peer._pc.connectionState
+  );
+};
           // REMOTE STREAM
           peer.on("stream", (remoteStream) => {
             console.log("REMOTE STREAM");
