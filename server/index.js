@@ -4,7 +4,6 @@ const { Server } = require("socket.io");
 const cors = require("cors");
 
 const app = express();
-
 app.use(cors());
 
 const server = http.createServer(app);
@@ -16,23 +15,24 @@ const io = new Server(server, {
 });
 
 // =========================
-// STORAGE
+// STATE
 // =========================
 
 let queue = [];
-
 const partners = new Map();
-
 const readyUsers = new Set();
+
+// 👉 FIX ONLINE USERS (QUAN TRỌNG)
+const onlineSockets = new Set();
 
 // =========================
 // ONLINE USERS
 // =========================
 
 function emitOnlineUsers() {
-  const count = io.engine.clientsCount;
+  const count = onlineSockets.size;
 
-  console.log("🟢 ONLINE USERS:", count);
+  console.log("🟢 ONLINE:", count);
 
   io.emit("online-users", count);
 }
@@ -53,29 +53,13 @@ function addToQueue(id) {
   }
 }
 
-function clearPartner(id) {
-  const partner = partners.get(id);
-
-  if (partner) {
-    partners.delete(id);
-    partners.delete(partner);
-
-    io.to(partner).emit(
-      "partner-disconnected"
-    );
-  }
-}
-
 // =========================
-// MATCH
+// MATCH SYSTEM
 // =========================
 
 function tryMatch() {
-  // chỉ giữ READY + chưa có partner
   queue = queue.filter(
-    (id) =>
-      readyUsers.has(id) &&
-      !partners.has(id)
+    (id) => readyUsers.has(id) && !partners.has(id)
   );
 
   console.log("QUEUE:", queue);
@@ -84,9 +68,7 @@ function tryMatch() {
     const a = queue.shift();
     const b = queue.shift();
 
-    if (!a || !b) continue;
-
-    if (a === b) continue;
+    if (!a || !b || a === b) continue;
 
     readyUsers.delete(a);
     readyUsers.delete(b);
@@ -106,57 +88,42 @@ function tryMatch() {
 
     console.log("🔥 MATCH:", a, b);
   }
-
-  console.log({
-    queue,
-    ready: [...readyUsers],
-    partners: [...partners.entries()],
-  });
 }
 
 // =========================
-// SOCKET
+// SOCKET.IO
 // =========================
 
 io.on("connection", (socket) => {
   console.log("CONNECT:", socket.id);
 
-  // update online users
+  // 👉 ADD ONLINE
+  onlineSockets.add(socket.id);
   emitOnlineUsers();
 
   // =========================
   // LOGIN
   // =========================
-
   socket.on("login", ({ email }) => {
     socket.email = email;
-
     console.log("LOGIN:", email);
   });
 
   // =========================
   // READY
   // =========================
-
   socket.on("ready", () => {
-    console.log("READY:", socket.id);
-
-    // nếu đang có partner
-    if (partners.has(socket.id)) {
-      return;
-    }
+    if (partners.has(socket.id)) return;
 
     readyUsers.add(socket.id);
-
     addToQueue(socket.id);
 
     tryMatch();
   });
 
   // =========================
-  // SIGNAL
+  // SIGNAL (WEBRTC)
   // =========================
-
   socket.on("signal", ({ to, data }) => {
     io.to(to).emit("signal", {
       from: socket.id,
@@ -167,26 +134,18 @@ io.on("connection", (socket) => {
   // =========================
   // NEXT
   // =========================
-
   socket.on("next", () => {
-    console.log("NEXT:", socket.id);
-
     const partner = partners.get(socket.id);
 
-    // clear current
     partners.delete(socket.id);
 
     if (partner) {
       partners.delete(partner);
 
-      io.to(partner).emit(
-        "partner-disconnected"
-      );
+      io.to(partner).emit("partner-disconnected");
     }
 
-    // ready again
     readyUsers.add(socket.id);
-
     addToQueue(socket.id);
 
     tryMatch();
@@ -195,27 +154,23 @@ io.on("connection", (socket) => {
   // =========================
   // DISCONNECT
   // =========================
-
   socket.on("disconnect", () => {
     console.log("DISCONNECT:", socket.id);
+
+    // 👉 REMOVE ONLINE
+    onlineSockets.delete(socket.id);
+    emitOnlineUsers();
 
     const partner = partners.get(socket.id);
 
     partners.delete(socket.id);
-
     readyUsers.delete(socket.id);
-
     removeFromQueue(socket.id);
-
-    // update online users
-    emitOnlineUsers();
 
     if (partner) {
       partners.delete(partner);
 
-      io.to(partner).emit(
-        "partner-disconnected"
-      );
+      io.to(partner).emit("partner-disconnected");
     }
 
     tryMatch();
@@ -223,11 +178,9 @@ io.on("connection", (socket) => {
 });
 
 // =========================
-// START
+// START SERVER
 // =========================
 
 server.listen(3001, () => {
-  console.log(
-    "🚀 Server running on 3001"
-  );
+  console.log("🚀 Server running on 3001");
 });
