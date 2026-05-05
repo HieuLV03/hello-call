@@ -4,33 +4,59 @@ const { Server } = require("socket.io");
 const cors = require("cors");
 
 const app = express();
+
 app.use(cors());
 
 const server = http.createServer(app);
 
 const io = new Server(server, {
-  cors: { origin: "*" },
+  cors: {
+    origin: "*",
+  },
 });
 
 let queue = [];
-let partners = new Map();
-let readyUsers = new Set();
+const partners = new Map();
+const readyUsers = new Set();
 
 function removeFromQueue(id) {
   queue = queue.filter((x) => x !== id);
 }
 
+function addToQueue(id) {
+  removeFromQueue(id);
+
+  if (!queue.includes(id)) {
+    queue.push(id);
+  }
+}
+
+function clearPartner(id) {
+  const partner = partners.get(id);
+
+  if (partner) {
+    partners.delete(id);
+    partners.delete(partner);
+
+    io.to(partner).emit("partner-disconnected");
+  }
+}
+
 function tryMatch() {
-  // chỉ match user READY + chưa có partner
+  // chỉ giữ user READY và chưa có partner
   queue = queue.filter(
     (id) => readyUsers.has(id) && !partners.has(id)
   );
+
+  console.log("QUEUE:", queue);
 
   while (queue.length >= 2) {
     const a = queue.shift();
     const b = queue.shift();
 
-    if (!a || !b || a === b) continue;
+    if (!a || !b) continue;
+
+    if (a === b) continue;
 
     readyUsers.delete(a);
     readyUsers.delete(b);
@@ -38,11 +64,24 @@ function tryMatch() {
     partners.set(a, b);
     partners.set(b, a);
 
-    io.to(a).emit("matched", { partnerId: b, initiator: true });
-    io.to(b).emit("matched", { partnerId: a, initiator: false });
+    io.to(a).emit("matched", {
+      partnerId: b,
+      initiator: true,
+    });
+
+    io.to(b).emit("matched", {
+      partnerId: a,
+      initiator: false,
+    });
 
     console.log("🔥 MATCH:", a, b);
   }
+
+  console.log({
+    queue,
+    ready: [...readyUsers],
+    partners: [...partners.entries()],
+  });
 }
 
 io.on("connection", (socket) => {
@@ -50,27 +89,23 @@ io.on("connection", (socket) => {
 
   socket.on("login", ({ email }) => {
     socket.email = email;
+
     console.log("LOGIN:", email);
   });
 
   socket.on("ready", () => {
-    if (partners.has(socket.id)) return;
+    console.log("READY:", socket.id);
+
+    // nếu đang có partner thì bỏ qua
+    if (partners.has(socket.id)) {
+      return;
+    }
 
     readyUsers.add(socket.id);
 
+    addToQueue(socket.id);
 
-removeFromQueue(socket.id);
-queue.push(socket.id);
-    console.log("READY:", socket.id, "QUEUE:", queue.length);
-
-    tryMatch(
-      
-    );
-    console.log({
-  queue,
-  ready: [...readyUsers],
-  partners: [...partners.entries()],
-});
+    tryMatch();
   });
 
   socket.on("signal", ({ to, data }) => {
@@ -81,41 +116,41 @@ queue.push(socket.id);
   });
 
   socket.on("next", () => {
+    console.log("NEXT:", socket.id);
+
     const partner = partners.get(socket.id);
 
+    // clear current
     partners.delete(socket.id);
-    readyUsers.add(socket.id);
-
-    removeFromQueue(socket.id);
-    queue.push(socket.id);
 
     if (partner) {
       partners.delete(partner);
-      readyUsers.add(partner);
 
       io.to(partner).emit("partner-disconnected");
-
-      removeFromQueue(partner);
-      queue.push(partner);
     }
+
+    // current user ready again
+    readyUsers.add(socket.id);
+    addToQueue(socket.id);
 
     tryMatch();
   });
 
   socket.on("disconnect", () => {
+    console.log("DISCONNECT:", socket.id);
+
     const partner = partners.get(socket.id);
 
     partners.delete(socket.id);
+
     readyUsers.delete(socket.id);
+
     removeFromQueue(socket.id);
 
     if (partner) {
       partners.delete(partner);
-      readyUsers.add(partner);
 
       io.to(partner).emit("partner-disconnected");
-      removeFromQueue(partner);
-      queue.push(partner);
     }
 
     tryMatch();
@@ -123,5 +158,5 @@ queue.push(socket.id);
 });
 
 server.listen(3001, () => {
-  console.log("Server running on 3001");
-})
+  console.log("🚀 Server running on 3001");
+});
