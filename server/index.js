@@ -15,15 +15,14 @@ const io = new Server(server, {
 let queue = [];
 const partners = new Map();
 const readyUsers = new Set();
-const onlineSockets = new Set();
 
-// ===================== ONLINE
+// ===================== ONLINE COUNT (FIXED)
 function emitOnlineUsers() {
-  const count = onlineSockets.size;
+  const count = io.of("/").sockets.size; // ⭐ CHUẨN SOCKET.IO
   io.emit("online-users", count);
 }
 
-// ===================== QUEUE
+// ===================== MATCH
 function addToQueue(id) {
   if (!queue.includes(id)) queue.push(id);
 }
@@ -56,21 +55,19 @@ function tryMatch() {
 io.on("connection", (socket) => {
   console.log("CONNECT:", socket.id);
 
-  onlineSockets.add(socket.id);
-  emitOnlineUsers();
+  emitOnlineUsers(); // ⭐ quan trọng
 
   socket.on("ready", () => {
     if (partners.has(socket.id)) return;
 
     readyUsers.add(socket.id);
     addToQueue(socket.id);
+
     tryMatch();
   });
 
   socket.on("disconnect", () => {
     console.log("DISCONNECT:", socket.id);
-
-    onlineSockets.delete(socket.id);
 
     readyUsers.delete(socket.id);
     queue = queue.filter((x) => x !== socket.id);
@@ -84,7 +81,7 @@ io.on("connection", (socket) => {
       io.to(partner).emit("partner-disconnected");
     }
 
-    emitOnlineUsers();
+    emitOnlineUsers(); // ⭐ update lại
     tryMatch();
   });
 });

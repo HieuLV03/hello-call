@@ -2,10 +2,8 @@
 
 import { signIn, signOut, useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState } from "react";
 import { io } from "socket.io-client";
-
-let globalSocket = null; // ⭐ FIX QUAN TRỌNG
 
 export default function Home() {
   const { data: session, status } = useSession();
@@ -14,24 +12,24 @@ export default function Home() {
   const [onlineUsers, setOnlineUsers] = useState(0);
 
   useEffect(() => {
-    if (globalSocket) return; // ⭐ chống tạo lại socket
+    const socket = io(
+      "https://hello-call-socket-production.up.railway.app",
+      {
+        transports: ["websocket"],
+        forceNew: true, // ⭐ QUAN TRỌNG
+      }
+    );
 
-    globalSocket = io("https://hello-call-socket-production.up.railway.app", {
-      transports: ["websocket"],
-      reconnection: true,
+    socket.on("connect", () => {
+      console.log("CONNECTED:", socket.id);
     });
 
-    globalSocket.on("connect", () => {
-      console.log("CONNECTED:", globalSocket.id);
-    });
-
-    globalSocket.on("online-users", (count) => {
-      console.log("ONLINE:", count);
+    socket.on("online-users", (count) => {
       setOnlineUsers(count);
     });
 
     return () => {
-      // KHÔNG disconnect ở đây (tránh dev StrictMode destroy 2 lần)
+      socket.disconnect();
     };
   }, []);
 
